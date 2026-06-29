@@ -1,11 +1,13 @@
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
 
-use super::text::display_width_u16;
+use super::status::state_dot;
+use super::text::{display_width_u16, truncate_end};
 use super::widgets::panel_contrast_fg;
 use crate::app::AppState;
 
@@ -13,13 +15,26 @@ const MIN_TAB_WIDTH: u16 = 8;
 const NEW_TAB_WIDTH: u16 = 3;
 const TAB_SCROLL_BUTTON_WIDTH: u16 = 3;
 
+/// Chrome around the workspace badge name: leading space, status dot, the space
+/// after it, the space before the separator, and the trailing `│` column.
+const BADGE_PADDING: u16 = 5;
+/// Upper bound so a long workspace name never eats the whole tab bar.
+const MAX_BADGE_WIDTH: u16 = 28;
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TabBarView {
     pub scroll: usize,
+    /// Leading segment reserved for the workspace badge, empty when not shown.
+    pub badge_rect: Rect,
     pub tab_hit_areas: Vec<Rect>,
     pub scroll_left_hit_area: Rect,
     pub scroll_right_hit_area: Rect,
     pub new_tab_hit_area: Rect,
+}
+
+/// Width the workspace badge would like to occupy, before clamping.
+fn badge_segment_width(ws: &crate::workspace::Workspace) -> u16 {
+    display_width_u16(&ws.display_name()).saturating_add(BADGE_PADDING)
 }
 
 fn tab_width(ws: &crate::workspace::Workspace, tab_idx: usize) -> u16 {
@@ -113,10 +128,33 @@ pub(crate) fn compute_tab_bar_view(
     current_scroll: usize,
     follow_active: bool,
     mouse_chrome: bool,
+    show_badge: bool,
 ) -> TabBarView {
     if area.width == 0 || area.height == 0 {
         return TabBarView::default();
     }
+
+    // Reserve a trailing segment at the right edge for the workspace badge (when
+    // the sidebar is hidden) so the tab layout below never overlaps it. The
+    // badge is capped so it always leaves at least half the bar for tabs.
+    let badge_w = if show_badge {
+        badge_segment_width(ws)
+            .min(MAX_BADGE_WIDTH)
+            .min(area.width / 2)
+    } else {
+        0
+    };
+    let badge_rect = if badge_w > 0 {
+        Rect::new(area.x + area.width - badge_w, area.y, badge_w, 1)
+    } else {
+        Rect::default()
+    };
+    let area = Rect::new(
+        area.x,
+        area.y,
+        area.width.saturating_sub(badge_w),
+        area.height,
+    );
 
     if !mouse_chrome {
         let max_scroll = max_tab_scroll(ws, area);
@@ -127,6 +165,7 @@ pub(crate) fn compute_tab_bar_view(
         };
         return TabBarView {
             scroll,
+            badge_rect,
             tab_hit_areas: layout_tab_hit_areas(ws, area, scroll),
             scroll_left_hit_area: Rect::default(),
             scroll_right_hit_area: Rect::default(),
@@ -153,6 +192,7 @@ pub(crate) fn compute_tab_bar_view(
         );
         return TabBarView {
             scroll: 0,
+            badge_rect,
             tab_hit_areas: all_tabs,
             scroll_left_hit_area: Rect::default(),
             scroll_right_hit_area: Rect::default(),
@@ -197,6 +237,7 @@ pub(crate) fn compute_tab_bar_view(
 
     TabBarView {
         scroll,
+        badge_rect,
         tab_hit_areas,
         scroll_left_hit_area: left_hit_area,
         scroll_right_hit_area: right_hit_area,
@@ -247,6 +288,45 @@ fn tab_drop_indicator_x(
     None
 }
 
+/// Draws the active workspace badge (`│ ● name`) in the reserved trailing
+/// segment at the right of the tab bar. Only invoked when the sidebar is
+/// hidden, in which case `badge` is non-empty.
+fn render_workspace_badge(
+    app: &AppState,
+    ws: &crate::workspace::Workspace,
+    frame: &mut Frame,
+    badge: Rect,
+) {
+    if badge.width == 0 || badge.height == 0 {
+        return;
+    }
+    let p = &app.palette;
+    let (agg_state, agg_seen) = ws.aggregate_state(&app.terminals);
+    let (dot, dot_style) = state_dot(agg_state, agg_seen, p);
+    // The leading column holds the `│` separator from the tabs.
+    frame.buffer_mut()[(badge.x, badge.y)]
+        .set_symbol("│")
+        .set_style(Style::default().fg(p.surface_dim).bg(p.panel_bg));
+    let name_budget = badge.width.saturating_sub(BADGE_PADDING) as usize;
+    let name = truncate_end(&ws.display_name(), name_budget);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(dot, dot_style.bg(p.panel_bg)),
+            Span::raw(" "),
+            Span::styled(
+                name,
+                Style::default()
+                    .fg(p.text)
+                    .bg(p.panel_bg)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]))
+        .style(Style::default().bg(p.panel_bg)),
+        Rect::new(badge.x + 1, badge.y, badge.width.saturating_sub(1), 1),
+    );
+}
+
 pub(super) fn render_tab_bar(app: &AppState, frame: &mut Frame, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -264,6 +344,8 @@ pub(super) fn render_tab_bar(app: &AppState, frame: &mut Frame, area: Rect) {
         Paragraph::new(" ".repeat(area.width as usize)).style(Style::default().bg(p.panel_bg)),
         area,
     );
+
+    render_workspace_badge(app, ws, frame, app.view.tab_badge_rect);
 
     let first_visible_idx = app
         .view
@@ -384,7 +466,8 @@ pub(super) fn render_tab_bar(app: &AppState, frame: &mut Frame, area: Rect) {
         let x = if app.mouse_capture && app.view.tab_scroll_right_hit_area.width > 0 {
             app.view.tab_scroll_right_hit_area.x.saturating_sub(1)
         } else {
-            area.x + area.width.saturating_sub(1)
+            // Tabs end before the workspace badge segment (0 when no badge).
+            area.x + area.width.saturating_sub(1 + app.view.tab_badge_rect.width)
         };
         if x >= area.x && x < area.x + area.width {
             frame.buffer_mut()[(x, area.y)]
@@ -420,7 +503,14 @@ mod tests {
         app.workspaces = vec![ws];
         app.active = Some(0);
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false);
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            false,
+        );
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -447,7 +537,14 @@ mod tests {
         app.workspaces = vec![ws];
         app.active = Some(0);
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false);
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            false,
+        );
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -493,7 +590,14 @@ mod tests {
         app.active = Some(0);
         app.workspaces = vec![ws];
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false);
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            false,
+        );
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -504,5 +608,66 @@ mod tests {
 
         let row = buffer_row_text(terminal.backend().buffer(), app.view.tab_bar_rect, 0);
         assert!(row.contains('馈'), "tab row: {row:?}");
+    }
+
+    #[test]
+    fn sidebar_hidden_shows_workspace_badge_at_right_edge() {
+        let mut app = AppState::test_new();
+        let mut ws = Workspace::test_new("test");
+        ws.set_custom_name("myspace".into());
+
+        app.active = Some(0);
+        app.workspaces = vec![ws];
+        app.sidebar_hidden = true;
+        app.view.tab_bar_rect = Rect::new(0, 0, 40, 1);
+
+        // Sidebar visible: no badge, tabs span the full width.
+        let visible = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            false,
+        );
+        assert_eq!(visible.badge_rect.width, 0);
+        assert_eq!(visible.tab_hit_areas[0].x, app.view.tab_bar_rect.x);
+
+        // Sidebar hidden: a badge segment is reserved at the right edge, tabs
+        // still start at the left edge.
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            true,
+        );
+        assert!(view.badge_rect.width > 0, "badge: {:?}", view.badge_rect);
+        assert_eq!(view.tab_hit_areas[0].x, app.view.tab_bar_rect.x);
+        assert_eq!(
+            view.badge_rect.x,
+            app.view.tab_bar_rect.x + app.view.tab_bar_rect.width - view.badge_rect.width
+        );
+
+        app.view.tab_badge_rect = view.badge_rect;
+        app.view.tab_hit_areas = view.tab_hit_areas;
+
+        let backend = TestBackend::new(40, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_tab_bar(&app, frame, app.view.tab_bar_rect))
+            .unwrap();
+
+        let row = buffer_row_text(terminal.backend().buffer(), app.view.tab_bar_rect, 0);
+        assert!(row.contains("myspace"), "tab row: {row:?}");
+        assert!(row.contains('│'), "tab row: {row:?}");
+        // The badge sits in the rightmost columns.
+        let badge_text = buffer_row_text(
+            terminal.backend().buffer(),
+            view.badge_rect,
+            view.badge_rect.y,
+        );
+        assert!(badge_text.contains("myspace"), "badge text: {badge_text:?}");
     }
 }
