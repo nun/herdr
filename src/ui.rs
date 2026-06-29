@@ -181,7 +181,9 @@ fn compute_view_internal(
         return;
     }
 
-    let sidebar_w = if app.sidebar_collapsed {
+    let sidebar_w = if app.sidebar_hidden {
+        0
+    } else if app.sidebar_collapsed {
         COLLAPSED_WIDTH
     } else {
         app.sidebar_width
@@ -200,7 +202,7 @@ fn compute_view_internal(
         (Rect::default(), main_area)
     };
 
-    if !app.sidebar_collapsed {
+    if !app.sidebar_collapsed && !app.sidebar_hidden {
         app.workspace_scroll = normalized_workspace_scroll(app, sidebar_area, app.workspace_scroll);
         let (_, detail_area) = expanded_sidebar_sections(sidebar_area, app.sidebar_section_split);
         let max_agent_scroll = agent_panel_scroll_metrics(app, detail_area).max_offset_from_bottom;
@@ -212,7 +214,7 @@ fn compute_view_internal(
         app.agent_panel_scroll = 0;
     }
 
-    let workspace_card_areas = if app.sidebar_collapsed {
+    let workspace_card_areas = if app.sidebar_collapsed || app.sidebar_hidden {
         Vec::new()
     } else {
         compute_workspace_card_areas(app, sidebar_area)
@@ -385,6 +387,8 @@ pub fn render_with_runtime_registry(
 
     if app.view.layout == ViewLayout::Mobile {
         render_mobile_header(app, terminal_runtimes, frame, app.view.mobile_header_rect);
+    } else if app.sidebar_hidden {
+        // Sidebar fully hidden; prefix+b toggles visibility.
     } else if app.sidebar_collapsed {
         render_sidebar_collapsed(app, frame, sidebar_area);
     } else {
@@ -788,6 +792,19 @@ mod tests {
         compute_view(&mut app, Rect::new(0, 0, 100, 20));
 
         assert_eq!(app.view.sidebar_rect.width, 22);
+    }
+
+    #[test]
+    fn hidden_sidebar_allocates_zero_width() {
+        let mut app = crate::app::state::AppState::test_new();
+        app.sidebar_hidden = true;
+        app.workspaces = vec![Workspace::test_new("one")];
+        app.active = Some(0);
+
+        compute_view(&mut app, Rect::new(0, 0, 80, 20));
+
+        assert_eq!(app.view.sidebar_rect.width, 0);
+        assert_eq!(app.view.terminal_area.width, 80);
     }
 
     #[test]

@@ -124,6 +124,7 @@ impl AppState {
 
         let launcher_enabled = self.view.layout != ViewLayout::Mobile
             && !self.sidebar_collapsed
+            && !self.sidebar_hidden
             && matches!(
                 self.mode,
                 Mode::Terminal

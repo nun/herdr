@@ -588,10 +588,12 @@ impl App {
             sidebar_width_source,
             sidebar_width_auto: false,
             sidebar_collapsed: false,
+            sidebar_hidden: config.ui.sidebar_hidden,
             sidebar_section_split,
             agent_panel_sort,
             next_agent_state_change_seq: 0,
             mouse_capture: config.ui.mouse_capture,
+            terminal_title_follows_space: config.ui.terminal_title.follows_space(),
             right_click_passthrough_modifiers: config.ui.right_click_passthrough_modifiers(),
             right_click_passthrough: None,
             redraw_on_focus_gained: config.ui.redraw_on_focus_gained,
@@ -1348,6 +1350,7 @@ impl App {
                     .sidebar_width
                     .clamp(self.state.sidebar_min_width, self.state.sidebar_max_width);
                 self.state.mouse_capture = config.ui.mouse_capture;
+                self.state.terminal_title_follows_space = config.ui.terminal_title.follows_space();
                 if self.state.redraw_on_focus_gained != config.ui.redraw_on_focus_gained {
                     self.state.request_client_config_reload = true;
                 }

@@ -216,6 +216,13 @@ impl App {
                     leave_navigate_mode(&mut self.state);
                 }
             }
+            NavigateAction::FocusDoneAgent => {
+                if let Some((idx, ws_idx, pane_id)) = self.top_done_agent_entry() {
+                    self.focus_pane_internal_via_api(ws_idx, pane_id);
+                    self.state.ensure_agent_panel_entry_visible(idx);
+                    leave_navigate_mode(&mut self.state);
+                }
+            }
             NavigateAction::NewTab => {
                 if self.state.active.is_some() {
                     if self.state.prompt_new_tab_name {
@@ -308,7 +315,7 @@ impl App {
             }
             NavigateAction::EnterResizeMode => self.state.mode = Mode::Resize,
             NavigateAction::ToggleSidebar => {
-                self.state.sidebar_collapsed = !self.state.sidebar_collapsed;
+                self.state.sidebar_hidden = !self.state.sidebar_hidden;
                 leave_navigate_mode(&mut self.state);
             }
             NavigateAction::CyclePaneNext => {
@@ -686,6 +693,18 @@ impl App {
         };
         let target = entries.get(next_idx)?;
         Some((next_idx, target.ws_idx, target.pane_id))
+    }
+
+    /// The most recently completed "done" agent (Idle and not yet seen), i.e. the
+    /// top of the done stack. Returns its agent-panel index plus focus target.
+    fn top_done_agent_entry(&self) -> Option<(usize, usize, crate::layout::PaneId)> {
+        let entries = crate::ui::agent_panel_entries(&self.state);
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.state == crate::detect::AgentState::Idle && !entry.seen)
+            .max_by_key(|(_, entry)| entry.last_agent_state_change_seq)
+            .map(|(idx, entry)| (idx, entry.ws_idx, entry.pane_id))
     }
 
     fn pass_through_key_to_focused_pane(&mut self, key: TerminalKey) -> bool {
@@ -1221,6 +1240,7 @@ pub(crate) enum NavigateAction {
     NextWorkspace,
     PreviousAgent,
     NextAgent,
+    FocusDoneAgent,
     NewTab,
     RenameTab,
     PreviousTab,
@@ -1325,6 +1345,7 @@ fn action_for_key(
         (&kb.next_workspace, NavigateAction::NextWorkspace),
         (&kb.previous_agent, NavigateAction::PreviousAgent),
         (&kb.next_agent, NavigateAction::NextAgent),
+        (&kb.focus_done_agent, NavigateAction::FocusDoneAgent),
         (&kb.new_tab, NavigateAction::NewTab),
         (&kb.rename_tab, NavigateAction::RenameTab),
         (&kb.previous_tab, NavigateAction::PreviousTab),
@@ -1481,6 +1502,11 @@ pub(super) fn execute_navigate_action_in_context(
             state.next_agent();
             leave_navigate_mode(state);
         }
+        NavigateAction::FocusDoneAgent => {
+            if state.focus_done_agent() {
+                leave_navigate_mode(state);
+            }
+        }
         NavigateAction::NewTab => {
             if state.active.is_some() {
                 if state.prompt_new_tab_name {
@@ -1555,7 +1581,7 @@ pub(super) fn execute_navigate_action_in_context(
         }
         NavigateAction::EnterResizeMode => state.mode = Mode::Resize,
         NavigateAction::ToggleSidebar => {
-            state.sidebar_collapsed = !state.sidebar_collapsed;
+            state.sidebar_hidden = !state.sidebar_hidden;
             leave_navigate_mode(state);
         }
         NavigateAction::CyclePaneNext => {
@@ -1979,14 +2005,14 @@ mod tests {
     fn custom_sidebar_toggle_key_toggles_and_exits_navigate() {
         let mut state = state_with_workspaces(&["test"]);
         state.keybinds.toggle_sidebar = crate::config::ActionKeybinds::prefix("g");
-        assert!(!state.sidebar_collapsed);
+        assert!(!state.sidebar_hidden);
 
         handle_navigate_key(
             &mut state,
             KeyEvent::new(KeyCode::Char('g'), KeyModifiers::empty()),
         );
 
-        assert!(state.sidebar_collapsed);
+        assert!(state.sidebar_hidden);
         assert_eq!(state.mode, Mode::Terminal);
     }
 
@@ -2568,7 +2594,7 @@ last_pane = "prefix+tab"
             KeyEvent::new(KeyCode::Char('U'), KeyModifiers::SHIFT),
         );
 
-        assert!(state.sidebar_collapsed);
+        assert!(state.sidebar_hidden);
     }
 
     #[test]

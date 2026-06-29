@@ -106,6 +106,22 @@ impl AgentPanelSortConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalTitleConfig {
+    /// Follow the active space name as the outer terminal window title.
+    #[default]
+    Space,
+    /// Leave the outer terminal window title untouched.
+    Off,
+}
+
+impl TerminalTitleConfig {
+    pub fn follows_space(self) -> bool {
+        matches!(self, Self::Space)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RightClickPassthroughModifierConfig(Option<KeyModifiers>);
 
@@ -340,6 +356,8 @@ pub struct KeysConfig {
     pub previous_agent: BindingConfig,
     /// Focus the next agent shown in the agent panel. Unset by default.
     pub next_agent: BindingConfig,
+    /// Focus the most recently completed ("done") agent. Default: "prefix+a".
+    pub focus_done_agent: BindingConfig,
     /// Focus an agent by index 1-9. Unset by default.
     pub focus_agent: BindingConfig,
     /// Local-client shortcut that sends a clipboard image to a remote Herdr session. Default: "ctrl+v".
@@ -397,7 +415,7 @@ pub struct KeysConfig {
     pub zoom: BindingConfig,
     /// Enter resize mode. Default: "prefix+r"
     pub resize_mode: BindingConfig,
-    /// Toggle sidebar collapse. Default: "prefix+b"
+    /// Toggle sidebar visibility. Default: "prefix+b"
     pub toggle_sidebar: BindingConfig,
     /// Optional indexed shortcuts expanded over number keys 1-9.
     pub indexed: IndexedKeysConfig,
@@ -459,6 +477,8 @@ pub(crate) struct KeysConfigOverlay {
     previous_agent: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     next_agent: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    focus_done_agent: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     focus_agent: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -564,6 +584,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(next_workspace);
         apply_field!(previous_agent);
         apply_field!(next_agent);
+        apply_field!(focus_done_agent);
         apply_field!(focus_agent);
         apply_field!(remote_image_paste);
         apply_field!(new_tab);
@@ -662,6 +683,7 @@ impl KeysConfig {
         copy_effective_action_field!(next_workspace, keybinds.next_workspace);
         copy_effective_action_field!(previous_agent, keybinds.previous_agent);
         copy_effective_action_field!(next_agent, keybinds.next_agent);
+        copy_effective_action_field!(focus_done_agent, keybinds.focus_done_agent);
         copy_effective_indexed_field!(focus_agent, keybinds.focus_agent);
         copy_user_field!(remote_image_paste);
         copy_effective_action_field!(new_tab, keybinds.new_tab);
@@ -763,6 +785,8 @@ pub struct UiConfig {
     pub sidebar_min_width: u16,
     /// Maximum sidebar width (columns) when expanded. Default: 36.
     pub sidebar_max_width: u16,
+    /// Start with the sidebar fully hidden. Default: false.
+    pub sidebar_hidden: bool,
     /// Terminal width at or below which Herdr uses the mobile single-column layout. Default: 64.
     pub mobile_width_threshold: u16,
     /// Capture mouse input for Herdr's mouse UI. Default: true.
@@ -785,6 +809,9 @@ pub struct UiConfig {
     pub show_agent_labels_on_pane_borders: bool,
     /// Agent sidebar ordering. Saved values are "spaces" or "priority". Default: "spaces".
     pub agent_panel_sort: AgentPanelSortConfig,
+    /// Outer terminal window title behavior. "space" follows the active space name,
+    /// "off" leaves the title untouched. Default: "space".
+    pub terminal_title: TerminalTitleConfig,
     /// Accent color for highlights, borders, and navigation UI.
     /// Accepts hex (#89b4fa), named colors (cyan, blue), or RGB (rgb(137,180,250)).
     pub accent: String,
@@ -913,6 +940,7 @@ impl Default for KeysConfig {
             next_workspace: BindingConfig::empty(),
             previous_agent: BindingConfig::empty(),
             next_agent: BindingConfig::empty(),
+            focus_done_agent: BindingConfig::one("prefix+a"),
             focus_agent: BindingConfig::empty(),
             remote_image_paste: "ctrl+v".into(),
             new_tab: BindingConfig::one("prefix+c"),
@@ -963,6 +991,7 @@ impl Default for UiConfig {
             sidebar_width: 26,
             sidebar_min_width: 18,
             sidebar_max_width: 36,
+            sidebar_hidden: false,
             mobile_width_threshold: DEFAULT_MOBILE_WIDTH_THRESHOLD,
             mouse_capture: true,
             right_click_passthrough_modifier: RightClickPassthroughModifierConfig::default(),
@@ -974,6 +1003,7 @@ impl Default for UiConfig {
             pane_gaps: true,
             show_agent_labels_on_pane_borders: false,
             agent_panel_sort: AgentPanelSortConfig::Spaces,
+            terminal_title: TerminalTitleConfig::Space,
             accent: "cyan".into(),
             toast: ToastConfig::default(),
             sound: SoundConfig::default(),
@@ -1179,6 +1209,30 @@ agent_panel_scope = "current"
     }
 
     #[test]
+    fn terminal_title_config_parses_and_defaults() {
+        assert_eq!(
+            Config::default().ui.terminal_title,
+            TerminalTitleConfig::Space
+        );
+        assert!(Config::default().ui.terminal_title.follows_space());
+
+        let toml = r#"
+[ui]
+terminal_title = "off"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.ui.terminal_title, TerminalTitleConfig::Off);
+        assert!(!config.ui.terminal_title.follows_space());
+
+        let toml = r#"
+[ui]
+terminal_title = "space"
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.ui.terminal_title, TerminalTitleConfig::Space);
+    }
+
+    #[test]
     fn pane_appearance_defaults_and_parse() {
         let default_config = Config::default();
         assert!(default_config.ui.pane_borders);
@@ -1308,6 +1362,18 @@ mobile_width_threshold = 96
         assert_eq!(config.ui.sidebar_min_width, 12);
         assert_eq!(config.ui.sidebar_max_width, 80);
         assert_eq!(config.ui.mobile_width_threshold, 96);
+    }
+
+    #[test]
+    fn sidebar_hidden_parses() {
+        let config: Config = toml::from_str(
+            r#"
+[ui]
+sidebar_hidden = true
+"#,
+        )
+        .unwrap();
+        assert!(config.ui.sidebar_hidden);
     }
 
     #[test]

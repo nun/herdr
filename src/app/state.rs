@@ -1349,6 +1349,7 @@ pub struct AppState {
     pub sidebar_width_source: SidebarWidthSource,
     pub sidebar_width_auto: bool,
     pub sidebar_collapsed: bool,
+    pub sidebar_hidden: bool,
     /// Ratio of sidebar height allocated to the workspaces section.
     pub sidebar_section_split: f32,
     pub agent_panel_sort: AgentPanelSort,
@@ -1356,6 +1357,9 @@ pub struct AppState {
     /// Capture mouse input for Herdr's own mouse UI. When false, Herdr only
     /// captures mouse while the focused pane app requests mouse reporting.
     pub mouse_capture: bool,
+    /// Update the outer terminal window title to the active space name when it
+    /// changes. When false, Herdr leaves the outer terminal title untouched.
+    pub terminal_title_follows_space: bool,
     pub right_click_passthrough_modifiers: Option<KeyModifiers>,
     pub right_click_passthrough: Option<RightClickPassthroughGesture>,
     pub redraw_on_focus_gained: bool,
@@ -1708,10 +1712,12 @@ impl AppState {
             sidebar_width_source: SidebarWidthSource::ConfigDefault,
             sidebar_width_auto: false,
             sidebar_collapsed: false,
+            sidebar_hidden: false,
             sidebar_section_split: 0.5,
             agent_panel_sort: AgentPanelSort::Spaces,
             next_agent_state_change_seq: 0,
             mouse_capture: true,
+            terminal_title_follows_space: true,
             right_click_passthrough_modifiers: None,
             right_click_passthrough: None,
             redraw_on_focus_gained: true,

@@ -182,7 +182,12 @@ close_pane = "prefix+x"
 zoom = "prefix+z"
 resize_mode = "prefix+r"
 toggle_sidebar = "prefix+b"
+focus_done_agent = "prefix+a"
 ```
+
+`focus_done_agent` jumps to the most recently completed agent, the one that just finished and you have not looked at yet (status "done"). Pressing it focuses that pane, which marks it seen, so pressing it again walks down to the next-most-recent done agent. It is a no-op when no agents are waiting to be reviewed. Set it to an empty string to disable it.
+
+`toggle_sidebar` (default `prefix+b`) fully hides or shows the sidebar. When the sidebar is visible, the compact collapsed bar is still available from the sidebar's mouse `«`/`»` controls.
 
 Optional actions are unset by default. Bind them with `prefix+` for prefix-mode behavior, or with an explicit modified chord when you intentionally want a direct shortcut:
 
@@ -300,6 +305,7 @@ Common options:
 sidebar_width = 32
 sidebar_min_width = 18
 sidebar_max_width = 36
+sidebar_hidden = false
 mobile_width_threshold = 64
 mouse_capture = true
 right_click_passthrough_modifier = ""
@@ -311,10 +317,13 @@ pane_borders = true
 pane_gaps = true
 show_agent_labels_on_pane_borders = false
 agent_panel_sort = "spaces"
+terminal_title = "space"
 accent = "cyan"
 ```
 
 `sidebar_min_width` and `sidebar_max_width` control the expanded sidebar's resize bounds in columns. The defaults are 18 and 36.
+
+`sidebar_hidden` starts Herdr with the sidebar fully hidden. The default is `false`. Use `toggle_sidebar` (default `prefix+b`) to show it again.
 
 `mobile_width_threshold` controls the terminal width at or below which Herdr uses the mobile single-column layout. The default is 64 columns; increase it for foldables, tablets, or wide phone terminals.
 
@@ -333,6 +342,8 @@ Set `mouse_scroll_lines` to change how many pane scrollback lines each mouse whe
 Set `pane_borders = false` to remove split pane borders. Set `pane_gaps = false` to make split panes share compact divider borders. With borders disabled, pane gaps use one blank terminal cell between panes. Terminal cells are usually taller than they are wide, so a one-row gap between top/bottom panes can look larger than a one-column gap between left/right panes.
 
 Set `show_agent_labels_on_pane_borders = true` if you want detected agent labels in split pane borders when no manual pane label is set.
+
+`terminal_title` controls the outer terminal window title. With the default `"space"`, Herdr updates the title to the active space name whenever you switch spaces. Set `terminal_title = "off"` to leave the title untouched, for example when your window manager or `herdr terminal title set` manages it instead. An explicit `herdr terminal title set` value stays until the next space switch.
 
 ## Notifications
 

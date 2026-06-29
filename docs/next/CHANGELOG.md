@@ -4,9 +4,13 @@
 
 ### Added
 - Added `session.snapshot` to bootstrap client runtime state in one socket API response before subscribing to events.
+- Added a `keys.focus_done_agent` binding (default `prefix+a`) that focuses the most recently completed agent and walks down the stack of unreviewed done agents on repeated presses.
+- Added `ui.sidebar_hidden` to start Herdr with the sidebar fully hidden. Default: false.
+- Herdr now updates the outer terminal window title to the active space name when you switch spaces. Set `ui.terminal_title = "off"` to leave the terminal title untouched.
 
 ### Changed
 - Bumped the client/server protocol version to 15 for socket API placement mutation event and response compatibility.
+- `prefix+b` (`toggle_sidebar`) now fully hides and shows the sidebar instead of collapsing it to the compact bar. The compact collapsed bar remains available via the sidebar's mouse `«`/`»` controls.
 
 ### Fixed
 - Native Windows clients running inside Alacritty now preserve mouse reports and `ctrl+j` input instead of leaking mouse escape sequences into panes. `shift+enter` remains dependent on whether the outer terminal reports it as a distinct modified Enter key. (#792)

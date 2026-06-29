@@ -182,6 +182,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # next_workspace = ""     # optional, unset by default
 # previous_agent = ""     # optional, unset by default
 # next_agent = ""         # optional, unset by default
+# focus_done_agent = "prefix+a" # focus the most recently completed agent; empty disables
 # focus_agent = ""        # optional indexed binding, e.g. "prefix+alt+1..9"
 # remote_image_paste = "ctrl+v" # only active in herdr --remote; empty disables raw-key image paste
 # new_tab = "prefix+c"
@@ -243,6 +244,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 
 # Maximum sidebar width when expanded (columns)
 # sidebar_max_width = 36
+
+# Start with the sidebar fully hidden. Default: false.
+# sidebar_hidden = false
 
 # Terminal width at or below which Herdr uses the mobile single-column layout.
 # Increase this for foldables, tablets, or wide phone terminals.

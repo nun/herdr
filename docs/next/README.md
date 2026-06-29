@@ -246,7 +246,7 @@ Press `ctrl+b` to enter prefix mode. Default actions are prefix-first and tmux-l
 | `prefix+shift+h/j/k/l` | swap pane |
 | `prefix+v` / `prefix+minus` | split pane |
 | `prefix+x` | close pane |
-| `prefix+b` | toggle sidebar |
+| `prefix+b` | show/hide sidebar |
 | `prefix+z` | zoom pane |
 | `prefix+r` | resize mode |
 | `prefix+q` | detach |

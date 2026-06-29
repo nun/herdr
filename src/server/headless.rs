@@ -204,6 +204,12 @@ pub struct HeadlessServer {
     next_client_id: u64,
     /// The client currently driving the shared pane runtime size, theme, and input keybindings.
     foreground_client_id: Option<u64>,
+    /// Last outer terminal window title auto-emitted for the active space, used to
+    /// avoid re-sending unchanged titles and to avoid clobbering explicit title sets.
+    last_window_title: Option<String>,
+    /// Foreground client the `last_window_title` was emitted to, so the title is
+    /// re-emitted when the foreground client changes (attach/promotion).
+    last_window_title_client: Option<u64>,
     /// Server-owned keybindings, restored when foreground clients use server mode.
     server_keybindings: crate::config::LiveKeybindConfig,
     /// Full server config warning shown to clients that use server keybindings.
@@ -402,6 +408,8 @@ impl HeadlessServer {
             #[cfg(unix)]
             next_client_id: 1,
             foreground_client_id: None,
+            last_window_title: None,
+            last_window_title_client: None,
             server_keybindings,
             server_config_diagnostic,
             server_config_diagnostic_without_keybindings,
@@ -597,6 +605,7 @@ impl HeadlessServer {
 
             self.drain_client_config_reload_request();
             self.stream_host_mouse_capture_mode();
+            self.sync_active_space_window_title();
 
             self.app.sync_headless_animation_timer(now);
 
@@ -2041,6 +2050,32 @@ impl HeadlessServer {
             return false;
         };
         self.send_to_client(client_id, msg)
+    }
+
+    /// Keeps the foreground client's outer terminal window title in sync with the
+    /// active space name. Re-emits only when the name changes or the foreground
+    /// client changes, so explicit `client.window_title.set` titles are not
+    /// clobbered until the next real space switch.
+    fn sync_active_space_window_title(&mut self) {
+        if !self.app.state.terminal_title_follows_space || self.foreground_client_id.is_none() {
+            return;
+        }
+        let desired = self.app.state.active.and_then(|idx| {
+            self.app.state.workspaces.get(idx).map(|ws| {
+                ws.display_name_from(&self.app.state.terminals, &self.app.terminal_runtimes)
+            })
+        });
+        if desired == self.last_window_title
+            && self.foreground_client_id == self.last_window_title_client
+        {
+            return;
+        }
+        if self.send_to_foreground_client(ServerMessage::WindowTitle {
+            title: desired.clone(),
+        }) {
+            self.last_window_title = desired;
+            self.last_window_title_client = self.foreground_client_id;
+        }
     }
 
     /// Sends a message to a specific client. Returns false if the client
@@ -3928,6 +3963,8 @@ mod tests {
             #[cfg(unix)]
             next_client_id: 1,
             foreground_client_id: None,
+            last_window_title: None,
+            last_window_title_client: None,
             server_keybindings,
             server_config_diagnostic: None,
             server_config_diagnostic_without_keybindings: None,
@@ -4068,6 +4105,117 @@ mod tests {
         server.resize_shared_runtime_to_effective_size();
 
         (server, client_rx, pane_id)
+    }
+
+    fn insert_test_foreground_client(
+        server: &mut HeadlessServer,
+        client_id: u64,
+    ) -> std::sync::mpsc::Receiver<Vec<u8>> {
+        let (client_tx, control_rx, _render_rx) = test_client_writer();
+        server.clients.insert(
+            client_id,
+            ClientConnection::new(
+                (80, 24),
+                crate::kitty_graphics::HostCellSize::default(),
+                crate::terminal_theme::TerminalTheme::default(),
+                None,
+                client_id,
+                RenderEncoding::SemanticFrame,
+                Some(client_tx),
+            ),
+        );
+        control_rx
+    }
+
+    fn server_with_spaces_and_foreground_client(
+        names: &[&str],
+    ) -> (HeadlessServer, std::sync::mpsc::Receiver<Vec<u8>>) {
+        let mut server = test_headless_server();
+        server.app.state.workspaces = names
+            .iter()
+            .map(|name| crate::workspace::Workspace::test_new(name))
+            .collect();
+        server.app.state.active = Some(0);
+        server.app.state.selected = 0;
+        let control_rx = insert_test_foreground_client(&mut server, 1);
+        server.foreground_client_id = Some(1);
+        (server, control_rx)
+    }
+
+    fn try_recv_window_title(
+        control_rx: &std::sync::mpsc::Receiver<Vec<u8>>,
+    ) -> Option<Option<String>> {
+        match control_rx.try_recv() {
+            Ok(bytes) => match read_server_message(bytes) {
+                ServerMessage::WindowTitle { title } => Some(title),
+                other => panic!("expected window title, got {other:?}"),
+            },
+            Err(_) => None,
+        }
+    }
+
+    #[test]
+    fn sync_window_title_emits_active_space_name_on_switch() {
+        let (mut server, control_rx) = server_with_spaces_and_foreground_client(&["alpha", "beta"]);
+
+        server.sync_active_space_window_title();
+        assert_eq!(
+            try_recv_window_title(&control_rx),
+            Some(Some("alpha".into()))
+        );
+
+        server.app.state.active = Some(1);
+        server.sync_active_space_window_title();
+        assert_eq!(
+            try_recv_window_title(&control_rx),
+            Some(Some("beta".into()))
+        );
+    }
+
+    #[test]
+    fn sync_window_title_skips_when_disabled() {
+        let (mut server, control_rx) = server_with_spaces_and_foreground_client(&["alpha"]);
+        server.app.state.terminal_title_follows_space = false;
+
+        server.sync_active_space_window_title();
+
+        assert_eq!(try_recv_window_title(&control_rx), None);
+    }
+
+    #[test]
+    fn sync_window_title_emits_once_for_unchanged_space() {
+        let (mut server, control_rx) = server_with_spaces_and_foreground_client(&["alpha"]);
+
+        server.sync_active_space_window_title();
+        assert_eq!(
+            try_recv_window_title(&control_rx),
+            Some(Some("alpha".into()))
+        );
+
+        // Unchanged active space must not re-emit, so an explicit
+        // `client.window_title.set` between switches is left intact.
+        server.sync_active_space_window_title();
+        assert_eq!(try_recv_window_title(&control_rx), None);
+    }
+
+    #[test]
+    fn sync_window_title_reemits_on_foreground_client_change() {
+        let (mut server, control_rx_1) = server_with_spaces_and_foreground_client(&["alpha"]);
+
+        server.sync_active_space_window_title();
+        assert_eq!(
+            try_recv_window_title(&control_rx_1),
+            Some(Some("alpha".into()))
+        );
+
+        let control_rx_2 = insert_test_foreground_client(&mut server, 2);
+        server.foreground_client_id = Some(2);
+
+        server.sync_active_space_window_title();
+        assert_eq!(
+            try_recv_window_title(&control_rx_2),
+            Some(Some("alpha".into()))
+        );
     }
 
     fn assert_frame_data_eq(actual: &FrameData, expected: &FrameData) {

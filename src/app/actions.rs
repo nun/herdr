@@ -1268,6 +1268,24 @@ impl AppState {
         self.cycle_agent_entry(false);
     }
 
+    /// Focus the most recently completed "done" agent (Idle and not yet seen),
+    /// i.e. the top of the done stack. Focusing it marks it seen, so a repeated
+    /// invocation walks down to the next-most-recent done agent. No-op (returns
+    /// false) when no done agents remain.
+    pub fn focus_done_agent(&mut self) -> bool {
+        let entries = crate::ui::agent_panel_entries(self);
+        let target = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.state == AgentState::Idle && !entry.seen)
+            .max_by_key(|(_, entry)| entry.last_agent_state_change_seq)
+            .map(|(idx, _)| idx);
+        match target {
+            Some(idx) => self.focus_agent_entry(idx),
+            None => false,
+        }
+    }
+
     pub fn focus_agent_entry(&mut self, idx: usize) -> bool {
         let entries = crate::ui::agent_panel_entries(self);
         let Some(target) = entries.get(idx) else {
@@ -3644,6 +3662,44 @@ mod tests {
         assert!(state.focus_agent_entry(0));
         assert_eq!(state.active, Some(0));
         assert_eq!(state.workspaces[0].focused_pane_id(), Some(root));
+        state.assert_invariants_for_test();
+    }
+
+    #[test]
+    fn focus_done_agent_targets_most_recent_done_then_walks_stack() {
+        let anchor = Workspace::test_new("anchor");
+        let older = Workspace::test_new("older");
+        let older_pane = older.tabs[0].root_pane;
+        let newer = Workspace::test_new("newer");
+        let newer_pane = newer.tabs[0].root_pane;
+
+        let mut state = AppState::test_new();
+        state.workspaces = vec![anchor, older, newer];
+        state.ensure_test_terminals();
+        state.active = Some(0);
+        state.selected = 0;
+        state.mode = Mode::Terminal;
+
+        // "older" completes first (lower seq), "newer" completes second (higher seq).
+        // Neither is in the active tab, so each completion leaves them done (unseen).
+        transition_agent_state(&mut state, older_pane, AgentState::Working);
+        transition_agent_state(&mut state, older_pane, AgentState::Idle);
+        transition_agent_state(&mut state, newer_pane, AgentState::Working);
+        transition_agent_state(&mut state, newer_pane, AgentState::Idle);
+
+        // The top of the stack is the most recently completed agent.
+        assert!(state.focus_done_agent());
+        assert_eq!(state.active, Some(2));
+        assert_eq!(state.workspaces[2].focused_pane_id(), Some(newer_pane));
+
+        // Focusing marked it seen, so the next call walks down to the older one.
+        assert!(state.focus_done_agent());
+        assert_eq!(state.active, Some(1));
+        assert_eq!(state.workspaces[1].focused_pane_id(), Some(older_pane));
+
+        // No done agents remain, so it is a no-op and focus stays put.
+        assert!(!state.focus_done_agent());
+        assert_eq!(state.active, Some(1));
         state.assert_invariants_for_test();
     }
 
