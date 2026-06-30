@@ -1761,6 +1761,19 @@ impl AppState {
         })
     }
 
+    /// Show/hide the sidebar via the keyboard toggle. The compact collapsed bar
+    /// counts as visible, so the first press hides whatever is showing. When the
+    /// sidebar is hidden, pressing again restores the full sidebar (clearing the
+    /// mouse-only collapsed state) rather than reappearing as the compact bar.
+    pub fn toggle_sidebar_visibility(&mut self) {
+        if self.sidebar_hidden {
+            self.sidebar_hidden = false;
+            self.sidebar_collapsed = false;
+        } else {
+            self.sidebar_hidden = true;
+        }
+    }
+
     pub fn toggle_zoom(&mut self) {
         let Some(ws_idx) = self.active else {
             return;

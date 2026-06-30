@@ -1774,6 +1774,70 @@ mod tests {
     }
 
     #[test]
+    fn prefix_b_shows_hidden_sidebar_through_client_input_and_render() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let config: Config = toml::from_str("[ui]\nsidebar_hidden = true\n").unwrap();
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(&config, true, None, api_rx, crate::api::EventHub::default());
+        app.state.workspaces = vec![Workspace::test_new("test")];
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.mode = Mode::Terminal;
+
+        let area = ratatui::layout::Rect::new(0, 0, 100, 24);
+        crate::ui::compute_view(&mut app.state, area);
+        assert!(app.state.sidebar_hidden);
+        assert_eq!(app.state.view.sidebar_rect.width, 0);
+
+        // Real runtime path: ctrl+b then b as separate key Press events.
+        app.route_client_events(
+            vec![raw_key(
+                KeyCode::Char('b'),
+                KeyModifiers::CONTROL,
+                KeyEventKind::Press,
+            )],
+            false,
+        );
+        assert_eq!(app.state.mode, Mode::Prefix, "ctrl+b should arm prefix");
+        app.route_client_events(
+            vec![raw_key(
+                KeyCode::Char('b'),
+                KeyModifiers::empty(),
+                KeyEventKind::Press,
+            )],
+            false,
+        );
+
+        assert!(
+            !app.state.sidebar_hidden,
+            "prefix+b should clear sidebar_hidden"
+        );
+
+        crate::ui::compute_view(&mut app.state, area);
+        let shown_width = app.state.view.sidebar_rect.width;
+        assert!(
+            shown_width >= app.state.sidebar_min_width,
+            "got {shown_width}"
+        );
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        terminal
+            .draw(|frame| crate::ui::render(&app.state, frame))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut sidebar_has_glyph = false;
+        for x in 0..shown_width {
+            for y in 0..24 {
+                if buffer.cell((x, y)).is_some_and(|c| c.symbol().trim() != "") {
+                    sidebar_has_glyph = true;
+                }
+            }
+        }
+        assert!(sidebar_has_glyph, "sidebar region should render content");
+    }
+
+    #[test]
     fn sync_prefix_input_source_switches_then_restores_when_enabled() {
         let mut app = test_app();
         app.state.switch_ascii_input_source_in_prefix = true;

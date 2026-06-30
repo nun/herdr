@@ -326,7 +326,7 @@ impl App {
             }
             NavigateAction::EnterResizeMode => self.state.mode = Mode::Resize,
             NavigateAction::ToggleSidebar => {
-                self.state.sidebar_hidden = !self.state.sidebar_hidden;
+                self.state.toggle_sidebar_visibility();
                 leave_navigate_mode(&mut self.state);
             }
             NavigateAction::CyclePaneNext => {
@@ -1589,7 +1589,7 @@ pub(super) fn execute_navigate_action_in_context(
         }
         NavigateAction::EnterResizeMode => state.mode = Mode::Resize,
         NavigateAction::ToggleSidebar => {
-            state.sidebar_hidden = !state.sidebar_hidden;
+            state.toggle_sidebar_visibility();
             leave_navigate_mode(state);
         }
         NavigateAction::CyclePaneNext => {
@@ -2517,6 +2517,25 @@ last_pane = "prefix+tab"
             .await;
 
         assert_eq!(app.state.mode, Mode::Terminal);
+    }
+
+    #[test]
+    fn toggle_sidebar_shows_full_sidebar_after_mouse_collapse() {
+        let mut state = state_with_workspaces(&["test"]);
+        state.active = Some(0);
+        state.selected = 0;
+        state.mode = Mode::Terminal;
+        // user collapsed to the compact bar via the mouse first
+        state.sidebar_collapsed = true;
+
+        // prefix+b hides the (compact) sidebar
+        execute_navigate_action(&mut state, NavigateAction::ToggleSidebar);
+        assert!(state.sidebar_hidden);
+
+        // prefix+b again restores the full sidebar, not the compact bar
+        execute_navigate_action(&mut state, NavigateAction::ToggleSidebar);
+        assert!(!state.sidebar_hidden);
+        assert!(!state.sidebar_collapsed);
     }
 
     #[tokio::test]
