@@ -805,6 +805,13 @@ fn tab_aggregate_state(
     (aggregate, seen)
 }
 
+/// Whether an agent in the given state is waiting on the user: blocked
+/// (needs input) or "done" (finished while the user was elsewhere and not yet
+/// reviewed). Working and already-seen idle agents do not need attention.
+fn agent_entry_needs_attention(state: AgentState, seen: bool) -> bool {
+    matches!(state, AgentState::Blocked) || (state == AgentState::Idle && !seen)
+}
+
 fn state_priority(state: AgentState, seen: bool) -> u8 {
     match (state, seen) {
         (AgentState::Blocked, _) => 5,
@@ -1280,22 +1287,35 @@ impl AppState {
         self.cycle_agent_entry(false);
     }
 
-    /// Focus the most recently completed "done" agent (Idle and not yet seen),
-    /// i.e. the top of the done stack. Focusing it marks it seen, so a repeated
-    /// invocation walks down to the next-most-recent done agent. No-op (returns
-    /// false) when no done agents remain.
-    pub fn focus_done_agent(&mut self) -> bool {
-        let entries = crate::ui::agent_panel_entries(self);
-        let target = entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| entry.state == AgentState::Idle && !entry.seen)
-            .max_by_key(|(_, entry)| entry.last_agent_state_change_seq)
-            .map(|(idx, _)| idx);
-        match target {
-            Some(idx) => self.focus_agent_entry(idx),
+    /// Focus the next agent that needs attention: either blocked (waiting for
+    /// input) or "done" (idle and not yet seen). Prefers the most recent state
+    /// change and skips the pane that is already focused so repeated invocations
+    /// walk through the waiting agents. Focusing a done agent marks it seen, so
+    /// it drops out of the set on the next call. No-op (returns false) when no
+    /// other agent is waiting.
+    pub fn focus_attention_agent(&mut self) -> bool {
+        match self.next_attention_agent() {
+            Some((idx, _, _)) => self.focus_agent_entry(idx),
             None => false,
         }
+    }
+
+    /// Resolve the next agent that needs attention (blocked, or idle-and-unseen
+    /// "done"), preferring the most recent state change and skipping the pane
+    /// that is already focused. Returns its agent-panel index plus focus target.
+    pub(crate) fn next_attention_agent(&self) -> Option<(usize, usize, PaneId)> {
+        let focused = self
+            .active
+            .and_then(|idx| self.workspaces.get(idx))
+            .and_then(crate::workspace::Workspace::focused_pane_id);
+        let entries = crate::ui::agent_panel_entries(self);
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| agent_entry_needs_attention(entry.state, entry.seen))
+            .filter(|(_, entry)| Some(entry.pane_id) != focused)
+            .max_by_key(|(_, entry)| entry.last_agent_state_change_seq)
+            .map(|(idx, entry)| (idx, entry.ws_idx, entry.pane_id))
     }
 
     pub fn focus_agent_entry(&mut self, idx: usize) -> bool {
@@ -3681,7 +3701,7 @@ mod tests {
     }
 
     #[test]
-    fn focus_done_agent_targets_most_recent_done_then_walks_stack() {
+    fn focus_attention_agent_targets_most_recent_done_then_walks_stack() {
         let anchor = Workspace::test_new("anchor");
         let older = Workspace::test_new("older");
         let older_pane = older.tabs[0].root_pane;
@@ -3703,18 +3723,81 @@ mod tests {
         transition_agent_state(&mut state, newer_pane, AgentState::Idle);
 
         // The top of the stack is the most recently completed agent.
-        assert!(state.focus_done_agent());
+        assert!(state.focus_attention_agent());
         assert_eq!(state.active, Some(2));
         assert_eq!(state.workspaces[2].focused_pane_id(), Some(newer_pane));
 
         // Focusing marked it seen, so the next call walks down to the older one.
-        assert!(state.focus_done_agent());
+        assert!(state.focus_attention_agent());
         assert_eq!(state.active, Some(1));
         assert_eq!(state.workspaces[1].focused_pane_id(), Some(older_pane));
 
-        // No done agents remain, so it is a no-op and focus stays put.
-        assert!(!state.focus_done_agent());
+        // No waiting agents remain, so it is a no-op and focus stays put.
+        assert!(!state.focus_attention_agent());
         assert_eq!(state.active, Some(1));
+        state.assert_invariants_for_test();
+    }
+
+    #[test]
+    fn focus_attention_agent_includes_blocked_agents() {
+        let anchor = Workspace::test_new("anchor");
+        let blocked = Workspace::test_new("blocked");
+        let blocked_pane = blocked.tabs[0].root_pane;
+        let done = Workspace::test_new("done");
+        let done_pane = done.tabs[0].root_pane;
+
+        let mut state = AppState::test_new();
+        state.workspaces = vec![anchor, blocked, done];
+        state.ensure_test_terminals();
+        state.active = Some(0);
+        state.selected = 0;
+        state.mode = Mode::Terminal;
+
+        // "done" finishes first (lower seq); "blocked" stalls on input second
+        // (higher seq). Both are in background workspaces.
+        transition_agent_state(&mut state, done_pane, AgentState::Working);
+        transition_agent_state(&mut state, done_pane, AgentState::Idle);
+        transition_agent_state(&mut state, blocked_pane, AgentState::Working);
+        transition_agent_state(&mut state, blocked_pane, AgentState::Blocked);
+
+        // The most recent waiting agent is the blocked one.
+        assert!(state.focus_attention_agent());
+        assert_eq!(state.active, Some(1));
+        assert_eq!(state.workspaces[1].focused_pane_id(), Some(blocked_pane));
+
+        // It stays blocked after focusing, but it is the focused pane now, so the
+        // next call skips it and walks to the still-unreviewed done agent.
+        assert!(state.focus_attention_agent());
+        assert_eq!(state.active, Some(2));
+        assert_eq!(state.workspaces[2].focused_pane_id(), Some(done_pane));
+
+        // Only the blocked agent is still waiting; focusing it again lands there.
+        assert!(state.focus_attention_agent());
+        assert_eq!(state.active, Some(1));
+        assert_eq!(state.workspaces[1].focused_pane_id(), Some(blocked_pane));
+        state.assert_invariants_for_test();
+    }
+
+    #[test]
+    fn focus_attention_agent_no_op_when_only_waiting_agent_is_focused() {
+        let blocked = Workspace::test_new("blocked");
+        let blocked_pane = blocked.tabs[0].root_pane;
+        let other = Workspace::test_new("other");
+
+        let mut state = AppState::test_new();
+        state.workspaces = vec![blocked, other];
+        state.ensure_test_terminals();
+        state.active = Some(0);
+        state.selected = 0;
+        state.mode = Mode::Terminal;
+        transition_agent_state(&mut state, blocked_pane, AgentState::Working);
+        transition_agent_state(&mut state, blocked_pane, AgentState::Blocked);
+
+        // The blocked agent is the only one waiting and it is already focused, so
+        // there is nothing else to jump to.
+        assert!(!state.focus_attention_agent());
+        assert_eq!(state.active, Some(0));
+        assert_eq!(state.workspaces[0].focused_pane_id(), Some(blocked_pane));
         state.assert_invariants_for_test();
     }
 

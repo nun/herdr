@@ -216,8 +216,8 @@ impl App {
                     leave_navigate_mode(&mut self.state);
                 }
             }
-            NavigateAction::FocusDoneAgent => {
-                if let Some((idx, ws_idx, pane_id)) = self.top_done_agent_entry() {
+            NavigateAction::FocusAttentionAgent => {
+                if let Some((idx, ws_idx, pane_id)) = self.state.next_attention_agent() {
                     self.focus_pane_internal_via_api(ws_idx, pane_id);
                     self.state.ensure_agent_panel_entry_visible(idx);
                     leave_navigate_mode(&mut self.state);
@@ -704,18 +704,6 @@ impl App {
         };
         let target = entries.get(next_idx)?;
         Some((next_idx, target.ws_idx, target.pane_id))
-    }
-
-    /// The most recently completed "done" agent (Idle and not yet seen), i.e. the
-    /// top of the done stack. Returns its agent-panel index plus focus target.
-    fn top_done_agent_entry(&self) -> Option<(usize, usize, crate::layout::PaneId)> {
-        let entries = crate::ui::agent_panel_entries(&self.state);
-        entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| entry.state == crate::detect::AgentState::Idle && !entry.seen)
-            .max_by_key(|(_, entry)| entry.last_agent_state_change_seq)
-            .map(|(idx, entry)| (idx, entry.ws_idx, entry.pane_id))
     }
 
     fn pass_through_key_to_focused_pane(&mut self, key: TerminalKey) -> bool {
@@ -1251,7 +1239,7 @@ pub(crate) enum NavigateAction {
     NextWorkspace,
     PreviousAgent,
     NextAgent,
-    FocusDoneAgent,
+    FocusAttentionAgent,
     NewTab,
     RenameTab,
     PreviousTab,
@@ -1357,7 +1345,10 @@ fn action_for_key(
         (&kb.next_workspace, NavigateAction::NextWorkspace),
         (&kb.previous_agent, NavigateAction::PreviousAgent),
         (&kb.next_agent, NavigateAction::NextAgent),
-        (&kb.focus_done_agent, NavigateAction::FocusDoneAgent),
+        (
+            &kb.focus_attention_agent,
+            NavigateAction::FocusAttentionAgent,
+        ),
         (&kb.new_tab, NavigateAction::NewTab),
         (&kb.rename_tab, NavigateAction::RenameTab),
         (&kb.previous_tab, NavigateAction::PreviousTab),
@@ -1515,8 +1506,8 @@ pub(super) fn execute_navigate_action_in_context(
             state.next_agent();
             leave_navigate_mode(state);
         }
-        NavigateAction::FocusDoneAgent => {
-            if state.focus_done_agent() {
+        NavigateAction::FocusAttentionAgent => {
+            if state.focus_attention_agent() {
                 leave_navigate_mode(state);
             }
         }

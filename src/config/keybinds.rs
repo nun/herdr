@@ -307,7 +307,7 @@ pub struct Keybinds {
     pub next_workspace: ActionKeybinds,
     pub previous_agent: ActionKeybinds,
     pub next_agent: ActionKeybinds,
-    pub focus_done_agent: ActionKeybinds,
+    pub focus_attention_agent: ActionKeybinds,
     pub focus_agent: Vec<IndexedKeybind>,
     pub new_tab: ActionKeybinds,
     pub rename_tab: ActionKeybinds,
@@ -471,7 +471,7 @@ impl Config {
             next_workspace: empty_action!(),
             previous_agent: empty_action!(),
             next_agent: empty_action!(),
-            focus_done_agent: empty_action!(),
+            focus_attention_agent: empty_action!(),
             focus_agent: Vec::new(),
             new_tab: empty_action!(),
             rename_tab: empty_action!(),
@@ -599,7 +599,11 @@ impl Config {
             apply_action!(keybinds.next_workspace, next_workspace, source);
             apply_action!(keybinds.previous_agent, previous_agent, source);
             apply_action!(keybinds.next_agent, next_agent, source);
-            apply_action!(keybinds.focus_done_agent, focus_done_agent, source);
+            apply_action!(
+                keybinds.focus_attention_agent,
+                focus_attention_agent,
+                source
+            );
             apply_indexed!(
                 keybinds.focus_agent,
                 focus_agent,
@@ -1554,12 +1558,25 @@ next_tab = "prefix+n"
     }
 
     #[test]
-    fn focus_done_agent_uses_prefix_a_by_default() {
+    fn focus_attention_agent_uses_prefix_a_by_default() {
         let kb = Config::default().keybinds();
         assert_eq!(
-            binding_triggers(&kb.focus_done_agent),
+            binding_triggers(&kb.focus_attention_agent),
             vec![BindingTrigger::Prefix((
                 KeyCode::Char('a'),
+                KeyModifiers::empty()
+            ))]
+        );
+    }
+
+    #[test]
+    fn focus_done_agent_alias_maps_to_focus_attention_agent() {
+        let config: Config = toml::from_str("[keys]\nfocus_done_agent = \"prefix+tab\"\n").unwrap();
+        let kb = config.keybinds();
+        assert_eq!(
+            binding_triggers(&kb.focus_attention_agent),
+            vec![BindingTrigger::Prefix((
+                KeyCode::Tab,
                 KeyModifiers::empty()
             ))]
         );

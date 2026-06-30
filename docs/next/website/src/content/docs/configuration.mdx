@@ -183,10 +183,10 @@ close_pane = "prefix+x"
 zoom = "prefix+z"
 resize_mode = "prefix+r"
 toggle_sidebar = "prefix+b"
-focus_done_agent = "prefix+a"
+focus_attention_agent = "prefix+a"
 ```
 
-`focus_done_agent` jumps to the most recently completed agent, the one that just finished and you have not looked at yet (status "done"). Pressing it focuses that pane, which marks it seen, so pressing it again walks down to the next-most-recent done agent. It is a no-op when no agents are waiting to be reviewed. Set it to an empty string to disable it.
+`focus_attention_agent` jumps to the next agent waiting on you: either a blocked agent that needs input, or a "done" agent that finished while you were elsewhere and you have not looked at yet. It prefers the most recent of these and skips the pane you are already on, so pressing it repeatedly walks through every waiting agent. Focusing a done agent marks it seen, dropping it from the rotation. It is a no-op when nothing else is waiting. Set it to an empty string to disable it. (`focus_done_agent` is still accepted as an alias for this binding.)
 
 `toggle_sidebar` (default `prefix+b`) fully hides or shows the sidebar. When the sidebar is visible, the compact collapsed bar is still available from the sidebar's mouse `«`/`»` controls.
 
