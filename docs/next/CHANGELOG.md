@@ -4,6 +4,7 @@
 
 ### Added
 - Added a configurable `last_tab` keybinding that toggles to the previously active tab in the current workspace (tmux last-window style). It is unset by default.
+- Added `ui.prefix_hint` to show or hide the prefix-mode hint bar at the bottom while prefix mode is active. Default: true.
 - Added `session.snapshot` to bootstrap client runtime state in one socket API response before subscribing to events.
 - Added a `keys.focus_done_agent` binding (default `prefix+a`) that focuses the most recently completed agent and walks down the stack of unreviewed done agents on repeated presses.
 - Added `ui.sidebar_hidden` to start Herdr with the sidebar fully hidden. Default: false.

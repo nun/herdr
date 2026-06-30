@@ -29,6 +29,10 @@ fn render_bottom_bar(frame: &mut Frame, area: Rect, line: Line<'_>, bg: ratatui:
 }
 
 pub(super) fn render_prefix_overlay(app: &AppState, frame: &mut Frame, area: Rect) {
+    if !app.prefix_hint {
+        return;
+    }
+
     let key = Style::default()
         .fg(app.palette.accent)
         .add_modifier(Modifier::BOLD);

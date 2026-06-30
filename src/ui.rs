@@ -1185,6 +1185,29 @@ mod tests {
     }
 
     #[test]
+    fn prefix_mode_hides_prefix_indicator_when_disabled() {
+        let mut app = crate::app::state::AppState::test_new();
+        app.mode = Mode::Prefix;
+        app.prefix_hint = false;
+        app.view.terminal_area = ratatui::layout::Rect::new(0, 0, 60, 4);
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 4))
+            .expect("test terminal");
+
+        terminal
+            .draw(|frame| render_prefix_overlay(&app, frame, app.view.terminal_area))
+            .expect("draw prefix overlay");
+
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(!rendered.contains("PREFIX"));
+    }
+
+    #[test]
     fn keybind_help_shows_unset_for_optional_actions() {
         let app = crate::app::state::AppState::test_new();
         let groups = keybind_help_groups(&app);
