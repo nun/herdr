@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added `ui.prefix_hint` to show or hide the prefix-mode hint bar at the bottom while prefix mode is active. Default: true.
 - Added `session.snapshot` to bootstrap client runtime state in one socket API response before subscribing to events.
 
 ### Changed
