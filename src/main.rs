@@ -189,6 +189,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # rename_tab = "prefix+shift+t"
 # previous_tab = "prefix+p"
 # next_tab = "prefix+n"
+# last_tab = ""           # optional, unset by default; bind e.g. "prefix+tab" to toggle to the previous tab
 # switch_tab = "prefix+1..9"
 # switch_workspace = ""   # optional indexed binding, e.g. "prefix+shift+1..9"
 # close_tab = "prefix+shift+x"

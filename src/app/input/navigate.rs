@@ -259,6 +259,17 @@ impl App {
                     leave_navigate_mode(&mut self.state);
                 }
             }
+            NavigateAction::LastTab => {
+                if let Some(tab_idx) = self
+                    .state
+                    .active
+                    .and_then(|ws_idx| self.state.workspaces.get(ws_idx))
+                    .and_then(crate::workspace::Workspace::last_tab_index)
+                {
+                    self.focus_tab_idx_via_api(tab_idx);
+                    leave_navigate_mode(&mut self.state);
+                }
+            }
             NavigateAction::CloseTab => {
                 self.close_active_tab_via_api();
                 leave_navigate_mode(&mut self.state);
@@ -1245,6 +1256,7 @@ pub(crate) enum NavigateAction {
     RenameTab,
     PreviousTab,
     NextTab,
+    LastTab,
     CloseTab,
     RenamePane,
     FocusPaneLeft,
@@ -1350,6 +1362,7 @@ fn action_for_key(
         (&kb.rename_tab, NavigateAction::RenameTab),
         (&kb.previous_tab, NavigateAction::PreviousTab),
         (&kb.next_tab, NavigateAction::NextTab),
+        (&kb.last_tab, NavigateAction::LastTab),
         (&kb.close_tab, NavigateAction::CloseTab),
         (&kb.rename_pane, NavigateAction::RenamePane),
         (&kb.edit_scrollback, NavigateAction::EditScrollback),
@@ -1524,6 +1537,10 @@ pub(super) fn execute_navigate_action_in_context(
         }
         NavigateAction::NextTab => {
             state.next_tab();
+            leave_navigate_mode(state);
+        }
+        NavigateAction::LastTab => {
+            state.last_tab();
             leave_navigate_mode(state);
         }
         NavigateAction::CloseTab => {

@@ -163,6 +163,9 @@ pub struct Workspace {
     pub(crate) next_public_tab_number: usize,
     pub tabs: Vec<Tab>,
     pub active_tab: usize,
+    /// Stable identity (`root_pane`) of the previously active tab, used by the
+    /// `last_tab` toggle. Survives tab reordering and goes stale-safe on close.
+    pub(crate) previous_active_tab: Option<PaneId>,
     #[cfg(test)]
     pub(crate) test_runtimes: HashMap<PaneId, TerminalRuntime>,
 }
@@ -221,6 +224,7 @@ impl Workspace {
             next_public_tab_number: 2,
             tabs: vec![tab],
             active_tab: 0,
+            previous_active_tab: None,
             #[cfg(test)]
             test_runtimes: HashMap::new(),
         }
@@ -402,6 +406,7 @@ impl Workspace {
                 next_public_tab_number: 2,
                 tabs: vec![tab],
                 active_tab: 0,
+                previous_active_tab: None,
                 #[cfg(test)]
                 test_runtimes: HashMap::new(),
             },
@@ -437,6 +442,9 @@ impl Workspace {
 
     pub fn switch_tab(&mut self, idx: usize) {
         if idx < self.tabs.len() {
+            if idx != self.active_tab {
+                self.previous_active_tab = self.tabs.get(self.active_tab).map(|tab| tab.root_pane);
+            }
             self.active_tab = idx;
             if let Some(tab) = self.tabs.get_mut(idx) {
                 for pane in tab.panes.values_mut() {
@@ -444,6 +452,14 @@ impl Workspace {
                 }
             }
         }
+    }
+
+    /// Resolve the previously active tab (`last_tab` toggle target) to a current
+    /// index, skipping it when it was closed or is already active.
+    pub fn last_tab_index(&self) -> Option<usize> {
+        let root = self.previous_active_tab?;
+        let idx = self.tabs.iter().position(|tab| tab.root_pane == root)?;
+        (idx != self.active_tab).then_some(idx)
     }
 
     pub fn create_tab(
@@ -557,6 +573,9 @@ impl Workspace {
             return false;
         }
         let tab = self.tabs.remove(idx);
+        if self.previous_active_tab == Some(tab.root_pane) {
+            self.previous_active_tab = None;
+        }
         for pane_id in tab.panes.keys() {
             self.unregister_pane(*pane_id);
         }
@@ -1209,6 +1228,7 @@ impl Workspace {
             next_public_tab_number: 2,
             tabs: vec![tab],
             active_tab: 0,
+            previous_active_tab: None,
             test_runtimes: HashMap::new(),
         }
     }

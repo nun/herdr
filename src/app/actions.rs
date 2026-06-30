@@ -1260,6 +1260,18 @@ impl AppState {
         }
     }
 
+    /// Toggle to the previously active tab in the active workspace, tmux
+    /// last-window style. No-op when there is no recorded previous tab.
+    pub fn last_tab(&mut self) {
+        if let Some(idx) = self
+            .active
+            .and_then(|i| self.workspaces.get(i))
+            .and_then(crate::workspace::Workspace::last_tab_index)
+        {
+            self.switch_tab(idx);
+        }
+    }
+
     pub fn next_agent(&mut self) {
         self.cycle_agent_entry(true);
     }
@@ -3909,6 +3921,56 @@ mod tests {
         assert_eq!(state.workspaces[1].active_tab, second_tab);
         assert_eq!(state.workspaces[1].focused_pane_id(), Some(second_tab_root));
         assert_ne!(second_first_root, second_tab_root);
+    }
+
+    #[test]
+    fn last_tab_toggles_to_previously_active_tab() {
+        let mut state = app_with_workspaces(&["one"]);
+        let tab_a = state.workspaces[0].active_tab;
+        let tab_b = state.workspaces[0].test_add_tab(Some("logs"));
+
+        // No previous tab recorded yet, so last_tab is a no-op.
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, tab_a);
+
+        state.switch_tab(tab_b);
+        assert_eq!(state.workspaces[0].active_tab, tab_b);
+
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, tab_a);
+
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, tab_b);
+    }
+
+    #[test]
+    fn last_tab_resolves_previous_tab_by_identity_after_reorder() {
+        let mut state = app_with_workspaces(&["one"]);
+        let tab_a_root = state.workspaces[0].tabs[0].root_pane;
+        let tab_b = state.workspaces[0].test_add_tab(Some("b"));
+        let _tab_c = state.workspaces[0].test_add_tab(Some("c"));
+
+        state.switch_tab(tab_b);
+        let tab_count = state.workspaces[0].tabs.len();
+        assert!(state.workspaces[0].move_tab(0, tab_count));
+
+        state.last_tab();
+        let active = state.workspaces[0].active_tab;
+        assert_eq!(state.workspaces[0].tabs[active].root_pane, tab_a_root);
+    }
+
+    #[test]
+    fn last_tab_no_ops_after_previous_tab_closed() {
+        let mut state = app_with_workspaces(&["one"]);
+        let tab_b = state.workspaces[0].test_add_tab(Some("b"));
+
+        state.switch_tab(tab_b);
+        assert!(state.workspaces[0].close_tab(0));
+        assert!(state.workspaces[0].previous_active_tab.is_none());
+
+        let active_before = state.workspaces[0].active_tab;
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, active_before);
     }
 
     #[test]
