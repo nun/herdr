@@ -1229,7 +1229,7 @@ mod tests {
             app.state.prefix_mods,
         ))
         .await;
-        app.handle_key(TerminalKey::new(KeyCode::Char('l'), KeyModifiers::empty()))
+        app.handle_key(TerminalKey::new(KeyCode::Right, KeyModifiers::empty()))
             .await;
 
         assert_eq!(app.state.mode, Mode::Terminal);
@@ -1245,7 +1245,7 @@ mod tests {
             app.state.prefix_mods,
         ))
         .await;
-        app.handle_key(TerminalKey::new(KeyCode::Char('h'), KeyModifiers::empty()))
+        app.handle_key(TerminalKey::new(KeyCode::Left, KeyModifiers::empty()))
             .await;
 
         assert_eq!(app.state.mode, Mode::Copy);
@@ -1267,7 +1267,7 @@ mod tests {
             app.state.prefix_mods,
         ))
         .await;
-        app.handle_key(TerminalKey::new(KeyCode::Char('l'), KeyModifiers::empty()))
+        app.handle_key(TerminalKey::new(KeyCode::Right, KeyModifiers::empty()))
             .await;
 
         assert_eq!(app.state.mode, Mode::Terminal);
@@ -1323,7 +1323,7 @@ mod tests {
             app.state.prefix_mods,
         ))
         .await;
-        app.handle_key(TerminalKey::new(KeyCode::Char('l'), KeyModifiers::empty()))
+        app.handle_key(TerminalKey::new(KeyCode::Right, KeyModifiers::empty()))
             .await;
         assert_eq!(app.state.mode, Mode::Terminal);
         assert!(app.state.copy_mode.is_some());

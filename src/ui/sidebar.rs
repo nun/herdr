@@ -193,6 +193,56 @@ pub(super) fn agent_panel_status_key(state: AgentState, seen: bool) -> &'static 
     }
 }
 
+/// True for agents that need a decision: blocked, or done and not yet seen.
+pub(crate) fn agent_panel_needs_attention(state: AgentState, seen: bool) -> bool {
+    matches!(agent_panel_status_key(state, seen), "blocked" | "done")
+}
+
+#[allow(dead_code)] // pending wiring into Workspace token rendering for tab-aware splitting
+fn format_agent_panel_primary_label(entry: &AgentPanelEntry, max_width: usize) -> String {
+    let Some(tab_label) = entry.primary_tab_label.as_deref() else {
+        return truncate_end(&entry.primary_label, max_width);
+    };
+
+    let separator = " · ";
+    let separator_width = display_width(separator);
+    if max_width <= separator_width + 2 {
+        return truncate_end(
+            &format!("{}{}{}", entry.primary_label, separator, tab_label),
+            max_width,
+        );
+    }
+
+    let available = max_width.saturating_sub(separator_width);
+    let min_tab = 4.min(available.saturating_sub(1)).max(1);
+    let preferred_workspace = ((available * 2) / 3).max(1);
+    let mut workspace_budget = preferred_workspace
+        .min(available.saturating_sub(min_tab))
+        .max(1);
+    let mut tab_budget = available.saturating_sub(workspace_budget);
+
+    let workspace_len = display_width(&entry.primary_label);
+    let tab_len = display_width(tab_label);
+
+    if workspace_len < workspace_budget {
+        let spare = workspace_budget - workspace_len;
+        workspace_budget = workspace_len;
+        tab_budget = (tab_budget + spare).min(available.saturating_sub(workspace_budget));
+    }
+    if tab_len < tab_budget {
+        let spare = tab_budget - tab_len;
+        tab_budget = tab_len;
+        workspace_budget = (workspace_budget + spare).min(available.saturating_sub(tab_budget));
+    }
+
+    format!(
+        "{}{}{}",
+        truncate_end(&entry.primary_label, workspace_budget),
+        separator,
+        truncate_end(tab_label, tab_budget)
+    )
+}
+
 fn workspace_row_height(app: &AppState, ws: &crate::workspace::Workspace, indented: bool) -> u16 {
     let (state, seen) = ws.aggregate_state(&app.terminals);
     let label = if indented {

@@ -323,6 +323,8 @@ pub struct Keybinds {
     pub next_workspace: ActionKeybinds,
     pub previous_agent: ActionKeybinds,
     pub next_agent: ActionKeybinds,
+    pub previous_attention_agent: ActionKeybinds,
+    pub next_attention_agent: ActionKeybinds,
     pub focus_agent: Vec<IndexedKeybind>,
     pub new_tab: ActionKeybinds,
     pub rename_tab: ActionKeybinds,
@@ -345,6 +347,8 @@ pub struct Keybinds {
     pub cycle_pane_next: ActionKeybinds,
     pub cycle_pane_previous: ActionKeybinds,
     pub last_pane: ActionKeybinds,
+    pub last_tab: ActionKeybinds,
+    pub last_workspace: ActionKeybinds,
     pub split_vertical: ActionKeybinds,
     pub split_horizontal: ActionKeybinds,
     pub close_pane: ActionKeybinds,
@@ -485,6 +489,8 @@ impl Config {
             next_workspace: empty_action!(),
             previous_agent: empty_action!(),
             next_agent: empty_action!(),
+            previous_attention_agent: empty_action!(),
+            next_attention_agent: empty_action!(),
             focus_agent: Vec::new(),
             new_tab: empty_action!(),
             rename_tab: empty_action!(),
@@ -507,6 +513,8 @@ impl Config {
             cycle_pane_next: empty_action!(),
             cycle_pane_previous: empty_action!(),
             last_pane: empty_action!(),
+            last_tab: empty_action!(),
+            last_workspace: empty_action!(),
             split_vertical: empty_action!(),
             split_horizontal: empty_action!(),
             close_pane: empty_action!(),
@@ -611,6 +619,12 @@ impl Config {
             apply_action!(keybinds.next_workspace, next_workspace, source);
             apply_action!(keybinds.previous_agent, previous_agent, source);
             apply_action!(keybinds.next_agent, next_agent, source);
+            apply_action!(
+                keybinds.previous_attention_agent,
+                previous_attention_agent,
+                source
+            );
+            apply_action!(keybinds.next_attention_agent, next_attention_agent, source);
             apply_indexed!(
                 keybinds.focus_agent,
                 focus_agent,
@@ -646,6 +660,8 @@ impl Config {
             apply_action!(keybinds.swap_pane_up, swap_pane_up, source);
             apply_action!(keybinds.swap_pane_right, swap_pane_right, source);
             apply_action!(keybinds.last_pane, last_pane, source);
+            apply_action!(keybinds.last_tab, last_tab, source);
+            apply_action!(keybinds.last_workspace, last_workspace, source);
             apply_action!(keybinds.cycle_pane_next, cycle_pane_next, source);
             apply_action!(keybinds.cycle_pane_previous, cycle_pane_previous, source);
             apply_action!(keybinds.split_vertical, split_vertical, source);
@@ -2094,27 +2110,32 @@ switch_tab = "prefix+?"
             .all(|binding| binding.trigger.is_prefix()));
         assert_eq!(
             binding_triggers(&kb.swap_pane_left),
-            vec![BindingTrigger::Prefix((
-                KeyCode::Char('h'),
-                KeyModifiers::SHIFT
-            ))]
+            vec![BindingTrigger::Prefix((KeyCode::Left, KeyModifiers::SHIFT))]
         );
         assert_eq!(
             binding_triggers(&kb.swap_pane_down),
-            vec![BindingTrigger::Prefix((
-                KeyCode::Char('j'),
-                KeyModifiers::SHIFT
-            ))]
+            vec![BindingTrigger::Prefix((KeyCode::Down, KeyModifiers::SHIFT))]
         );
         assert_eq!(
             binding_triggers(&kb.swap_pane_up),
+            vec![BindingTrigger::Prefix((KeyCode::Up, KeyModifiers::SHIFT))]
+        );
+        assert_eq!(
+            binding_triggers(&kb.swap_pane_right),
             vec![BindingTrigger::Prefix((
-                KeyCode::Char('k'),
+                KeyCode::Right,
                 KeyModifiers::SHIFT
             ))]
         );
         assert_eq!(
-            binding_triggers(&kb.swap_pane_right),
+            binding_triggers(&kb.last_tab),
+            vec![BindingTrigger::Prefix((
+                KeyCode::Char('l'),
+                KeyModifiers::empty()
+            ))]
+        );
+        assert_eq!(
+            binding_triggers(&kb.last_workspace),
             vec![BindingTrigger::Prefix((
                 KeyCode::Char('l'),
                 KeyModifiers::SHIFT
@@ -2161,7 +2182,7 @@ previous_workspace = "prefix+shift+l"
                 KeyModifiers::SHIFT
             ))]
         );
-        assert!(kb.swap_pane_right.bindings.is_empty());
+        assert!(kb.last_workspace.bindings.is_empty());
     }
 
     #[test]

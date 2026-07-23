@@ -206,8 +206,12 @@
 - Added `herdr terminal session control` for bridge processes that need live ANSI frames plus input, resize, scroll, release, and takeover authority.
 - Added `ui.hide_tab_bar_when_single_tab` to hide the tab row when a workspace has one tab. (#448)
 - Added Japanese and Simplified Chinese website docs.
+- Added `previous_attention_agent` / `next_attention_agent` keybindings to cycle only through agents that are blocked or done, skipping working/idle agents. Unset by default. (#682)
+- Added `last_tab` and `last_workspace` keybindings to toggle back to the previously visited tab (scoped to the active workspace) or the previously visited workspace, tmux-`last-window`-style. Default to `prefix+l` and `prefix+shift+l`.
 
 ### Changed
+- Bumped the client/server protocol version to 15 for socket API placement mutation event and response compatibility.
+- Moved the default pane focus/swap keybindings from `prefix+h/j/k/l` (and `prefix+shift+h/j/k/l`) to `prefix+left/down/up/right` (and `prefix+shift+` equivalents), freeing `prefix+l` / `prefix+shift+l` for `last_tab` / `last_workspace`.
 - The mobile switcher now starts from an agents-first summary and renders worktrees as a tree, making narrow terminals easier to scan.
 - macOS prefix input-source switching now runs on the foreground client, so non-Latin input sources are restored reliably after prefix mode. (#774, #1016, thanks @ppggff)
 - Nix packaging now uses `xcbuild` instead of custom Apple SDK wrappers for Darwin builds. (#995, thanks @arunoruto)

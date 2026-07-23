@@ -197,6 +197,9 @@ pub struct Workspace {
     pub(crate) next_public_tab_number: usize,
     pub tabs: Vec<Tab>,
     pub active_tab: usize,
+    /// Root pane of the previously active tab, used to implement "last tab" MRU
+    /// toggling within this workspace. `None` when no prior tab switch has happened.
+    pub(crate) previous_tab: Option<PaneId>,
     #[cfg(test)]
     pub(crate) test_runtimes: HashMap<PaneId, TerminalRuntime>,
 }
@@ -262,6 +265,7 @@ impl Workspace {
             next_public_tab_number: 2,
             tabs: vec![tab],
             active_tab: 0,
+            previous_tab: None,
             #[cfg(test)]
             test_runtimes: HashMap::new(),
         }
@@ -461,6 +465,7 @@ impl Workspace {
                 next_public_tab_number: 2,
                 tabs: vec![tab],
                 active_tab: 0,
+                previous_tab: None,
                 #[cfg(test)]
                 test_runtimes: HashMap::new(),
             },
@@ -496,7 +501,12 @@ impl Workspace {
 
     pub fn switch_tab(&mut self, idx: usize) {
         if idx < self.tabs.len() {
-            self.active_tab = idx;
+            if idx != self.active_tab {
+                if let Some(previous) = self.tabs.get(self.active_tab) {
+                    self.previous_tab = Some(previous.root_pane);
+                }
+                self.active_tab = idx;
+            }
             if let Some(tab) = self.tabs.get_mut(idx) {
                 for pane in tab.panes.values_mut() {
                     pane.seen = true;
@@ -1293,6 +1303,7 @@ impl Workspace {
             next_public_tab_number: 2,
             tabs: vec![tab],
             active_tab: 0,
+            previous_tab: None,
             test_runtimes: HashMap::new(),
         }
     }
