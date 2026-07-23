@@ -1723,9 +1723,12 @@ impl AppState {
             self.view.tab_scroll_right_hit_area = ratatui::layout::Rect::default();
             self.view.new_tab_hit_area = ratatui::layout::Rect::default();
             self.view.tab_status_area = ratatui::layout::Rect::default();
+            self.view.tab_space_area = ratatui::layout::Rect::default();
+            self.view.tab_space_label.clear();
             return;
         };
 
+        let space_label = ws.display_name();
         let layout = crate::ui::compute_tab_bar_view(
             ws,
             area,
@@ -1733,6 +1736,7 @@ impl AppState {
             self.tab_scroll_follow_active,
             self.mouse_capture,
             self.tab_status.config.reserved_width(),
+            &space_label,
         );
         self.tab_scroll = layout.scroll;
         self.view.tab_hit_areas = layout.tab_hit_areas;
@@ -1740,6 +1744,8 @@ impl AppState {
         self.view.tab_scroll_right_hit_area = layout.scroll_right_hit_area;
         self.view.new_tab_hit_area = layout.new_tab_hit_area;
         self.view.tab_status_area = layout.status_area;
+        self.view.tab_space_area = layout.space_area;
+        self.view.tab_space_label = space_label;
     }
 }
 

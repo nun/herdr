@@ -3932,6 +3932,9 @@ impl HeadlessServer {
 
         if self.has_app_client() {
             self.app.start_git_status_refresh_if_due(now);
+            // Tab-bar status is TUI chrome, but the runner lives on the server App
+            // (same place as git status) so attached clients receive it in frames.
+            self.app.start_tab_status_refresh_if_due(now);
         }
 
         if self
@@ -5877,6 +5880,31 @@ next_tab = ""
 
         assert!(!server.handle_scheduled_tasks_headless(now, false));
         assert_eq!(server.app.next_agent_manifest_update_check, None);
+    }
+
+    #[test]
+    fn headless_scheduled_tasks_start_tab_status_refresh_when_due() {
+        let mut server = test_headless_server();
+        let (writer, _control, _render) = test_client_writer();
+        server.clients.insert(
+            1,
+            ClientConnection::new(
+                (100, 30),
+                crate::kitty_graphics::HostCellSize::default(),
+                server.app.state.host_terminal_theme,
+                Some(true),
+                1,
+                RenderEncoding::SemanticFrame,
+                Some(writer),
+            ),
+        );
+        server.app.state.tab_status.config.command = "echo hi".into();
+        server.app.state.tab_status.config.interval_secs = 15;
+        server.app.next_tab_status_deadline = Some(Instant::now());
+        server.app.tab_status_in_flight = false;
+
+        assert!(!server.handle_scheduled_tasks_headless(Instant::now(), false));
+        assert!(server.app.tab_status_in_flight);
     }
 
     #[tokio::test]

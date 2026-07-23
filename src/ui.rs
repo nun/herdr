@@ -93,7 +93,7 @@ pub(crate) use self::{
     },
     panes::{apply_pane_chrome, pane_inner_rect, pane_is_scrolled_back},
     tab_surface::{tab_surface_cursor, tab_surface_hyperlinks, TabSurfaceView},
-    tabs::compute_tab_bar_view,
+    tabs::{compute_tab_bar_view, TabBarView},
     widgets::{centered_popup_rect, modal_stack_areas},
 };
 use crate::app::state::ViewLayout;
@@ -258,20 +258,23 @@ fn compute_view_internal(
         compute_workspace_card_areas(app, sidebar_area)
     };
 
-    let tab_bar_view = app
+    let (tab_bar_view, tab_space_label) = app
         .active
         .and_then(|ws_idx| app.workspaces.get(ws_idx))
         .map(|ws| {
-            compute_tab_bar_view(
+            let space_label = ws.display_name_from(&app.terminals, terminal_runtimes);
+            let view = compute_tab_bar_view(
                 ws,
                 tab_bar_rect,
                 app.tab_scroll,
                 app.tab_scroll_follow_active,
                 app.mouse_capture,
                 app.tab_status.config.reserved_width(),
-            )
+                &space_label,
+            );
+            (view, space_label)
         })
-        .unwrap_or_default();
+        .unwrap_or_else(|| (TabBarView::default(), String::new()));
     app.tab_scroll = tab_bar_view.scroll;
 
     let TabSurfaceLayout {
@@ -312,6 +315,8 @@ fn compute_view_internal(
         tab_scroll_right_hit_area: tab_bar_view.scroll_right_hit_area,
         new_tab_hit_area: tab_bar_view.new_tab_hit_area,
         tab_status_area: tab_bar_view.status_area,
+        tab_space_area: tab_bar_view.space_area,
+        tab_space_label,
         terminal_area,
         mobile_header_rect: Rect::default(),
         mobile_menu_hit_area: Rect::default(),
@@ -376,6 +381,8 @@ fn compute_mobile_view(
         tab_scroll_right_hit_area: Rect::default(),
         new_tab_hit_area: Rect::default(),
         tab_status_area: Rect::default(),
+        tab_space_area: Rect::default(),
+        tab_space_label: String::new(),
         terminal_area,
         mobile_header_rect: header_rect,
         mobile_menu_hit_area: header_hits.menu,
@@ -844,14 +851,21 @@ mod tests {
         compute_view(&mut app, Rect::new(0, 0, 80, 20));
         assert_eq!(app.view.tab_bar_rect, Rect::default());
         assert_eq!(app.view.tab_status_area, Rect::default());
+        assert_eq!(app.view.tab_space_area, Rect::default());
 
         app.workspaces[0].test_add_tab(Some("logs"));
         compute_view(&mut app, Rect::new(0, 0, 80, 20));
 
         assert!(app.view.tab_bar_rect.width > 0);
         assert_eq!(app.view.tab_status_area.width, 12);
+        assert_eq!(app.view.tab_space_label, "one");
+        assert!(app.view.tab_space_area.width > 0);
         assert_eq!(
             app.view.tab_status_area.x + app.view.tab_status_area.width,
+            app.view.tab_space_area.x
+        );
+        assert_eq!(
+            app.view.tab_space_area.x + app.view.tab_space_area.width,
             app.view.tab_bar_rect.x + app.view.tab_bar_rect.width
         );
     }

@@ -4,6 +4,7 @@
 
 ### Added
 - Added `[ui.tab_status]` to run a shell command on an interval and paint its first stdout line on the far right of the desktop tab bar (tmux-style status-right). Display-only; follows tab-bar visibility including `ui.hide_tab_bar_when_single_tab`.
+- Painted the active space name on the desktop tab bar to the right of `[ui.tab_status]`; updates when switching spaces and follows tab-bar visibility.
 
 ## [0.7.5] - 2026-07-21
 

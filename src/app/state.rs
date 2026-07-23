@@ -793,6 +793,10 @@ pub struct ViewState {
     pub new_tab_hit_area: Rect,
     /// Far-right reserved strip for `[ui.tab_status]` (display-only; zero when disabled).
     pub tab_status_area: Rect,
+    /// Rightmost reserved strip for the active space name (zero when empty/hidden).
+    pub tab_space_area: Rect,
+    /// Label painted in `tab_space_area` (from the active workspace display name).
+    pub tab_space_label: String,
     pub terminal_area: Rect,
     pub mobile_header_rect: Rect,
     pub mobile_menu_hit_area: Rect,
@@ -1854,6 +1858,8 @@ impl AppState {
                 tab_scroll_right_hit_area: Rect::default(),
                 new_tab_hit_area: Rect::default(),
                 tab_status_area: Rect::default(),
+                tab_space_area: Rect::default(),
+                tab_space_label: String::new(),
                 terminal_area: Rect::default(),
                 mobile_header_rect: Rect::default(),
                 mobile_menu_hit_area: Rect::default(),

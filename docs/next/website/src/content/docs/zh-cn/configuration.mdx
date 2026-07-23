@@ -365,6 +365,8 @@ width = 24
 
 仅显示 stdout 的第一行（支持 Unicode；v1 不应用 ANSI 样式）。该条仅用于显示，并跟随桌面标签栏可见性（包括 `ui.hide_tab_bar_when_single_tab`）。`command` 为空或省略时禁用。默认值请在[配置参考](/docs/config-reference/)中搜索 `ui.tab_status`。
 
+桌面标签栏还会在状态条更右侧绘制当前 Space 名称（与侧栏 Spaces 列表相同的标签）。切换 Space 时更新，并随标签栏一并隐藏。
+
 ## 通知
 
 当后台智能体完成任务或需要输入时，Herdr 可以通知你：
