@@ -317,6 +317,14 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # New tabs can still be created with the configured keybinding.
 # hide_tab_bar_when_single_tab = false
 
+# Periodic shell command painted on the far right of the desktop tab bar
+# (tmux-style status-right). Empty/omitted command disables the strip.
+# First line of stdout only; Unicode OK; no ANSI styling in v1.
+# [ui.tab_status]
+# command = "date '+%H:%M'"
+# interval_secs = 15
+# width = 24
+
 # Agent panel ordering: "spaces" (grouped by space) or "priority" (attention queue).
 # "workspaces" is accepted as an alias for "spaces".
 # agent_panel_sort = "spaces"

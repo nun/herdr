@@ -1,4 +1,6 @@
-use crate::config::{Keybinds, NewTerminalCwdConfig, SoundConfig, ToastConfig, ToastDelivery};
+use crate::config::{
+    Keybinds, NewTerminalCwdConfig, SoundConfig, TabStatusConfig, ToastConfig, ToastDelivery,
+};
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Direction, Rect};
 use ratatui::style::Color;
@@ -764,6 +766,14 @@ pub(crate) fn text_matches_query(query: &str, text: &str) -> bool {
         .all(|needle| haystack.contains(needle))
 }
 
+/// Far-right tab-bar status strip (presentation-only; not shared runtime metadata).
+#[derive(Debug, Clone, Default)]
+pub struct TabStatusState {
+    pub config: TabStatusConfig,
+    /// Last successfully captured first-line stdout (already truncated at paint).
+    pub cached_text: String,
+}
+
 /// Computed view geometry — derived from AppState + terminal size.
 /// Updated before each render, consumed by render and mouse handling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -781,6 +791,8 @@ pub struct ViewState {
     pub tab_scroll_left_hit_area: Rect,
     pub tab_scroll_right_hit_area: Rect,
     pub new_tab_hit_area: Rect,
+    /// Far-right reserved strip for `[ui.tab_status]` (display-only; zero when disabled).
+    pub tab_status_area: Rect,
     pub terminal_area: Rect,
     pub mobile_header_rect: Rect,
     pub mobile_menu_hit_area: Rect,
@@ -1539,6 +1551,8 @@ pub struct AppState {
     pub sound: SoundConfig,
     pub local_sound_playback: bool,
     pub toast_config: ToastConfig,
+    /// Tab-bar status script config + cached display text (TUI presentation only).
+    pub tab_status: TabStatusState,
     pub keybinds: Keybinds,
     /// Frame counter for spinner animations (wraps around).
     pub spinner_tick: u32,
@@ -1839,6 +1853,7 @@ impl AppState {
                 tab_scroll_left_hit_area: Rect::default(),
                 tab_scroll_right_hit_area: Rect::default(),
                 new_tab_hit_area: Rect::default(),
+                tab_status_area: Rect::default(),
                 terminal_area: Rect::default(),
                 mobile_header_rect: Rect::default(),
                 mobile_menu_hit_area: Rect::default(),
@@ -1909,6 +1924,7 @@ impl AppState {
             },
             local_sound_playback: false,
             toast_config: ToastConfig::default(),
+            tab_status: TabStatusState::default(),
             keybinds: Keybinds::default(),
             spinner_tick: 0,
             palette: Palette::catppuccin(),

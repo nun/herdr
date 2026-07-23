@@ -5,7 +5,7 @@ use ratatui::{
     Frame,
 };
 
-use super::text::display_width_u16;
+use super::text::{display_width, display_width_u16, truncate_end};
 use super::widgets::panel_contrast_fg;
 use crate::app::AppState;
 
@@ -20,6 +20,7 @@ pub(crate) struct TabBarView {
     pub scroll_left_hit_area: Rect,
     pub scroll_right_hit_area: Rect,
     pub new_tab_hit_area: Rect,
+    pub status_area: Rect,
 }
 
 fn tab_width(ws: &crate::workspace::Workspace, tab_idx: usize) -> u16 {
@@ -107,48 +108,66 @@ fn max_tab_scroll(ws: &crate::workspace::Workspace, area: Rect) -> usize {
         .unwrap_or(0)
 }
 
+fn status_area_for(area: Rect, status_width: u16) -> Rect {
+    if status_width == 0 || area.width == 0 || area.height == 0 {
+        return Rect::default();
+    }
+    let width = status_width.min(area.width);
+    Rect::new(area.x + area.width - width, area.y, width, 1)
+}
+
 pub(crate) fn compute_tab_bar_view(
     ws: &crate::workspace::Workspace,
     area: Rect,
     current_scroll: usize,
     follow_active: bool,
     mouse_chrome: bool,
+    status_width: u16,
 ) -> TabBarView {
     if area.width == 0 || area.height == 0 {
         return TabBarView::default();
     }
 
+    let status_area = status_area_for(area, status_width);
+    let content_right = area.x + area.width - status_area.width;
+    let content_area = Rect::new(
+        area.x,
+        area.y,
+        content_right.saturating_sub(area.x),
+        area.height,
+    );
+
     if !mouse_chrome {
-        let max_scroll = max_tab_scroll(ws, area);
+        let max_scroll = max_tab_scroll(ws, content_area);
         let scroll = if follow_active {
-            centered_tab_scroll(ws, area).min(max_scroll)
+            centered_tab_scroll(ws, content_area).min(max_scroll)
         } else {
             current_scroll.min(max_scroll)
         };
         return TabBarView {
             scroll,
-            tab_hit_areas: layout_tab_hit_areas(ws, area, scroll),
+            tab_hit_areas: layout_tab_hit_areas(ws, content_area, scroll),
             scroll_left_hit_area: Rect::default(),
             scroll_right_hit_area: Rect::default(),
             new_tab_hit_area: Rect::default(),
+            status_area,
         };
     }
 
-    let area_right = area.x + area.width;
     let all_tabs_area = Rect::new(
-        area.x,
-        area.y,
-        area.width.saturating_sub(NEW_TAB_WIDTH),
-        area.height,
+        content_area.x,
+        content_area.y,
+        content_area.width.saturating_sub(NEW_TAB_WIDTH),
+        content_area.height,
     );
     let all_tabs = layout_tab_hit_areas(ws, all_tabs_area, 0);
     let overflow = all_tabs.iter().any(|rect| rect.width == 0);
     if !overflow {
-        let new_tab_x = trailing_tab_controls_x(&all_tabs, area.x);
+        let new_tab_x = trailing_tab_controls_x(&all_tabs, content_area.x);
         let new_tab_hit_area = Rect::new(
             new_tab_x,
-            area.y,
-            area_right.saturating_sub(new_tab_x).min(NEW_TAB_WIDTH),
+            content_area.y,
+            content_right.saturating_sub(new_tab_x).min(NEW_TAB_WIDTH),
             1,
         );
         return TabBarView {
@@ -157,18 +176,24 @@ pub(crate) fn compute_tab_bar_view(
             scroll_left_hit_area: Rect::default(),
             scroll_right_hit_area: Rect::default(),
             new_tab_hit_area,
+            status_area,
         };
     }
 
-    let left_hit_area = Rect::new(area.x, area.y, TAB_SCROLL_BUTTON_WIDTH.min(area.width), 1);
+    let left_hit_area = Rect::new(
+        content_area.x,
+        content_area.y,
+        TAB_SCROLL_BUTTON_WIDTH.min(content_area.width),
+        1,
+    );
     let tab_area_x = left_hit_area.x + left_hit_area.width;
     let reserved_trailing_width = NEW_TAB_WIDTH.saturating_add(TAB_SCROLL_BUTTON_WIDTH);
-    let tab_area_right = area_right.saturating_sub(reserved_trailing_width);
+    let tab_area_right = content_right.saturating_sub(reserved_trailing_width);
     let tab_area = Rect::new(
         tab_area_x,
-        area.y,
+        content_area.y,
         tab_area_right.saturating_sub(tab_area_x),
-        area.height,
+        content_area.height,
     );
 
     let max_scroll = max_tab_scroll(ws, tab_area);
@@ -181,8 +206,8 @@ pub(crate) fn compute_tab_bar_view(
     let trailing_x = trailing_tab_controls_x(&tab_hit_areas, tab_area_x).min(tab_area_right);
     let right_hit_area = Rect::new(
         trailing_x,
-        area.y,
-        area_right
+        content_area.y,
+        content_right
             .saturating_sub(trailing_x)
             .min(TAB_SCROLL_BUTTON_WIDTH),
         1,
@@ -190,8 +215,8 @@ pub(crate) fn compute_tab_bar_view(
     let new_tab_x = right_hit_area.x + right_hit_area.width;
     let new_tab_hit_area = Rect::new(
         new_tab_x,
-        area.y,
-        area_right.saturating_sub(new_tab_x).min(NEW_TAB_WIDTH),
+        content_area.y,
+        content_right.saturating_sub(new_tab_x).min(NEW_TAB_WIDTH),
         1,
     );
 
@@ -201,6 +226,7 @@ pub(crate) fn compute_tab_bar_view(
         scroll_left_hit_area: left_hit_area,
         scroll_right_hit_area: right_hit_area,
         new_tab_hit_area,
+        status_area,
     }
 }
 
@@ -367,6 +393,17 @@ pub(super) fn render_tab_bar(app: &AppState, frame: &mut Frame, area: Rect) {
         );
     }
 
+    if app.view.tab_status_area.width > 0 {
+        let max_width = app.view.tab_status_area.width as usize;
+        let text = truncate_end(&app.tab_status.cached_text, max_width);
+        let pad = max_width.saturating_sub(display_width(&text));
+        let painted = format!("{}{text}", " ".repeat(pad));
+        frame.render_widget(
+            Paragraph::new(painted).style(Style::default().fg(p.overlay1).bg(p.panel_bg)),
+            app.view.tab_status_area,
+        );
+    }
+
     if first_visible_idx.is_some_and(|idx| idx > 0) {
         let x = if app.mouse_capture && app.view.tab_scroll_left_hit_area.width > 0 {
             app.view.tab_scroll_left_hit_area.x + app.view.tab_scroll_left_hit_area.width
@@ -419,7 +456,14 @@ mod tests {
         app.workspaces = vec![ws];
         app.active = Some(0);
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false);
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            0,
+        );
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -446,7 +490,14 @@ mod tests {
         app.workspaces = vec![ws];
         app.active = Some(0);
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false);
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            0,
+        );
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -492,7 +543,14 @@ mod tests {
         app.active = Some(0);
         app.workspaces = vec![ws];
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false);
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            false,
+            0,
+        );
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -503,5 +561,119 @@ mod tests {
 
         let row = buffer_row_text(terminal.backend().buffer(), app.view.tab_bar_rect, 0);
         assert!(row.contains('馈'), "tab row: {row:?}");
+    }
+
+    #[test]
+    fn tab_bar_reserves_status_strip_right_of_new_tab() {
+        let mut ws = Workspace::test_new("test");
+        ws.test_add_tab(Some("logs"));
+        let area = Rect::new(0, 0, 80, 1);
+        let status_width = 24;
+
+        let with_status = compute_tab_bar_view(&ws, area, 0, true, true, status_width);
+        let without_status = compute_tab_bar_view(&ws, area, 0, true, true, 0);
+
+        assert_eq!(with_status.status_area.width, status_width);
+        assert_eq!(
+            with_status.status_area.x,
+            area.x + area.width - status_width
+        );
+        assert_eq!(without_status.status_area, Rect::default());
+        assert!(with_status.new_tab_hit_area.width > 0);
+        assert!(
+            with_status.new_tab_hit_area.x + with_status.new_tab_hit_area.width
+                <= with_status.status_area.x,
+            "new_tab={:?} status={:?}",
+            with_status.new_tab_hit_area,
+            with_status.status_area
+        );
+        // Content layout for tabs/+ uses the reduced width, so overflow detection
+        // treats the status strip as unavailable — two short tabs still fit.
+        assert_eq!(with_status.scroll_left_hit_area, Rect::default());
+        assert_eq!(without_status.new_tab_hit_area.width, NEW_TAB_WIDTH);
+    }
+
+    #[test]
+    fn tab_bar_status_keeps_scroll_controls_left_of_status() {
+        let mut ws = Workspace::test_new("test");
+        for name in ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta"] {
+            ws.test_add_tab(Some(name));
+        }
+        let area = Rect::new(0, 0, 65, 1);
+        let status_width = 12;
+
+        let view = compute_tab_bar_view(&ws, area, 2, false, true, status_width);
+
+        assert_eq!(view.status_area.width, status_width);
+        assert!(view.scroll_left_hit_area.width > 0);
+        assert!(view.scroll_right_hit_area.width > 0);
+        assert!(view.new_tab_hit_area.width > 0);
+        assert!(view.scroll_right_hit_area.x + view.scroll_right_hit_area.width <= view.status_area.x);
+        assert!(view.new_tab_hit_area.x + view.new_tab_hit_area.width <= view.status_area.x);
+    }
+
+    #[test]
+    fn tab_bar_paints_cached_unicode_status_in_reserved_strip() {
+        let mut app = AppState::test_new();
+        let mut ws = Workspace::test_new("test");
+        ws.test_add_tab(Some("logs"));
+
+        app.workspaces = vec![ws];
+        app.active = Some(0);
+        app.mouse_capture = true;
+        app.tab_status.config.command = "echo status".into();
+        app.tab_status.config.width = 10;
+        app.tab_status.cached_text = "提交✓".into();
+        app.view.tab_bar_rect = Rect::new(0, 0, 40, 1);
+
+        let view = compute_tab_bar_view(
+            &app.workspaces[0],
+            app.view.tab_bar_rect,
+            0,
+            true,
+            true,
+            app.tab_status.config.reserved_width(),
+        );
+        app.view.tab_hit_areas = view.tab_hit_areas;
+        app.view.new_tab_hit_area = view.new_tab_hit_area;
+        app.view.tab_status_area = view.status_area;
+
+        let backend = TestBackend::new(40, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_tab_bar(&app, frame, app.view.tab_bar_rect))
+            .unwrap();
+
+        let status_text = buffer_row_text(
+            terminal.backend().buffer(),
+            app.view.tab_status_area,
+            0,
+        );
+        assert!(
+            status_text.contains('提') || status_text.contains('✓'),
+            "status strip: {status_text:?}"
+        );
+        assert_eq!(app.view.tab_status_area.width, 10);
+    }
+
+    #[test]
+    fn hidden_tab_bar_skips_status_paint() {
+        let mut app = AppState::test_new();
+        let ws = Workspace::test_new("test");
+        app.workspaces = vec![ws];
+        app.active = Some(0);
+        app.tab_status.config.command = "echo hi".into();
+        app.tab_status.cached_text = "should-not-show".into();
+        app.view.tab_bar_rect = Rect::default();
+        app.view.tab_status_area = Rect::default();
+
+        let backend = TestBackend::new(40, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_tab_bar(&app, frame, app.view.tab_bar_rect))
+            .unwrap();
+
+        let row = buffer_row_text(terminal.backend().buffer(), Rect::new(0, 0, 40, 1), 0);
+        assert!(!row.contains("should-not-show"), "row: {row:?}");
     }
 }

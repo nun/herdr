@@ -176,6 +176,43 @@ fn parse_right_click_passthrough_modifier(value: &str) -> Option<Option<KeyModif
     (!modifiers.is_empty()).then_some(Some(modifiers))
 }
 
+/// Periodic shell command painted on the far right of the desktop tab bar.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct TabStatusConfig {
+    /// Shell command to run. Empty or omitted disables the status strip.
+    pub command: String,
+    /// Seconds between runs. Default: 15.
+    pub interval_secs: u64,
+    /// Display columns reserved for the status strip. Default: 24.
+    pub width: u16,
+}
+
+impl Default for TabStatusConfig {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            interval_secs: 15,
+            width: 24,
+        }
+    }
+}
+
+impl TabStatusConfig {
+    pub fn is_enabled(&self) -> bool {
+        !self.command.trim().is_empty()
+    }
+
+    /// Columns to reserve on the tab bar when enabled; 0 when disabled.
+    pub fn reserved_width(&self) -> u16 {
+        if self.is_enabled() {
+            self.width
+        } else {
+            0
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ToastConfig {
     pub delivery: ToastDelivery,
@@ -849,6 +886,8 @@ pub struct UiConfig {
     pub toast: ToastConfig,
     /// Play sounds when agents change state in background workspaces.
     pub sound: SoundConfig,
+    /// Periodic shell command painted on the far right of the desktop tab bar.
+    pub tab_status: TabStatusConfig,
 }
 
 /// Cursor shape (DECSCUSR) used for the forced IME anchor.
@@ -1045,6 +1084,7 @@ impl Default for UiConfig {
             accent: "cyan".into(),
             toast: ToastConfig::default(),
             sound: SoundConfig::default(),
+            tab_status: TabStatusConfig::default(),
         }
     }
 }
@@ -1587,6 +1627,37 @@ mouse_scroll_lines = 1
 mouse_scroll_lines = 0
 "#;
         assert!(toml::from_str::<Config>(toml).is_err());
+    }
+
+    #[test]
+    fn tab_status_config_defaults_and_parses() {
+        let default_config = Config::default();
+        assert_eq!(default_config.ui.tab_status.command, "");
+        assert_eq!(default_config.ui.tab_status.interval_secs, 15);
+        assert_eq!(default_config.ui.tab_status.width, 24);
+        assert!(!default_config.ui.tab_status.is_enabled());
+
+        let toml = r#"
+[ui.tab_status]
+command = "echo hello"
+interval_secs = 30
+width = 40
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.ui.tab_status.command, "echo hello");
+        assert_eq!(config.ui.tab_status.interval_secs, 30);
+        assert_eq!(config.ui.tab_status.width, 40);
+        assert!(config.ui.tab_status.is_enabled());
+
+        let empty_toml = r#"
+[ui.tab_status]
+command = ""
+"#;
+        let empty: Config = toml::from_str(empty_toml).unwrap();
+        assert_eq!(empty.ui.tab_status.command, "");
+        assert_eq!(empty.ui.tab_status.interval_secs, 15);
+        assert_eq!(empty.ui.tab_status.width, 24);
+        assert!(!empty.ui.tab_status.is_enabled());
     }
 
     #[test]

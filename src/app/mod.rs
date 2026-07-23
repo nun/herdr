@@ -574,6 +574,7 @@ impl App {
                 tab_scroll_left_hit_area: Rect::default(),
                 tab_scroll_right_hit_area: Rect::default(),
                 new_tab_hit_area: Rect::default(),
+                tab_status_area: Rect::default(),
                 terminal_area: Rect::default(),
                 mobile_header_rect: Rect::default(),
                 mobile_menu_hit_area: Rect::default(),
@@ -643,6 +644,10 @@ impl App {
             sound: config.ui.sound.clone(),
             local_sound_playback: true,
             toast_config: config.ui.toast.clone(),
+            tab_status: state::TabStatusState {
+                config: config.ui.tab_status.clone(),
+                cached_text: String::new(),
+            },
             keybinds: config.keybinds(),
             spinner_tick: 0,
             palette: theme_palette,
