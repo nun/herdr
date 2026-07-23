@@ -110,6 +110,25 @@ impl App {
             return;
         }
 
+        if let AppEvent::TabStatusRefreshed { text } = ev {
+            self.tab_status_in_flight = false;
+            if let Some(text) = text {
+                if self.state.tab_status.cached_text != text {
+                    self.state.tab_status.cached_text = text;
+                    self.render_dirty.store(true, Ordering::Release);
+                    self.render_notify.notify_one();
+                }
+            }
+            if self.state.tab_status.config.is_enabled() {
+                let interval =
+                    Duration::from_secs(self.state.tab_status.config.interval_secs.max(1));
+                self.next_tab_status_deadline = Some(Instant::now() + interval);
+            } else {
+                self.next_tab_status_deadline = None;
+            }
+            return;
+        }
+
         if let AppEvent::PluginCommandFinished {
             log_id,
             finished_unix_ms,

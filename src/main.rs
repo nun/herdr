@@ -92,6 +92,7 @@ mod selection;
 mod server;
 mod session;
 mod sound;
+mod tab_status;
 mod terminal;
 mod terminal_modes;
 mod terminal_notify;

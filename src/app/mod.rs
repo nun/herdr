@@ -113,6 +113,8 @@ pub struct App {
     pub(crate) git_refresh_in_flight: bool,
     pub(crate) git_refresh_due_after_in_flight: bool,
     pub(crate) git_status_cache: HashMap<std::path::PathBuf, crate::workspace::GitStatusCacheEntry>,
+    pub(crate) tab_status_in_flight: bool,
+    pub(crate) next_tab_status_deadline: Option<Instant>,
     pub(crate) pending_api_worktree_creates: HashMap<std::path::PathBuf, u64>,
     pub(crate) pending_api_worktree_removes: HashMap<String, u64>,
     pub(crate) pending_api_worktree_remove_paths: HashMap<std::path::PathBuf, u64>,
@@ -728,6 +730,12 @@ impl App {
             git_refresh_in_flight: false,
             git_refresh_due_after_in_flight: false,
             git_status_cache: HashMap::new(),
+            tab_status_in_flight: false,
+            next_tab_status_deadline: config
+                .ui
+                .tab_status
+                .is_enabled()
+                .then(Instant::now),
             pending_api_worktree_creates: HashMap::new(),
             pending_api_worktree_removes: HashMap::new(),
             pending_api_worktree_remove_paths: HashMap::new(),
@@ -2064,6 +2072,52 @@ mod tests {
         app.git_refresh_in_flight = true;
 
         assert_eq!(app.git_refresh_deadline(), None);
+    }
+
+    #[test]
+    fn tab_status_event_updates_cache_and_marks_render_dirty() {
+        let mut app = test_app();
+        app.state.tab_status.config.command = "echo hi".into();
+        app.state.tab_status.cached_text = "old".into();
+        app.tab_status_in_flight = true;
+        app.render_dirty.store(false, Ordering::Release);
+
+        app.handle_internal_event(AppEvent::TabStatusRefreshed {
+            text: Some("new status".into()),
+        });
+
+        assert!(!app.tab_status_in_flight);
+        assert_eq!(app.state.tab_status.cached_text, "new status");
+        assert!(app.render_dirty.load(Ordering::Acquire));
+        assert!(app.next_tab_status_deadline.is_some());
+    }
+
+    #[test]
+    fn tab_status_failure_event_keeps_last_good_cache() {
+        let mut app = test_app();
+        app.state.tab_status.config.command = "echo hi".into();
+        app.state.tab_status.cached_text = "keep-me".into();
+        app.tab_status_in_flight = true;
+        app.render_dirty.store(false, Ordering::Release);
+
+        app.handle_internal_event(AppEvent::TabStatusRefreshed { text: None });
+
+        assert!(!app.tab_status_in_flight);
+        assert_eq!(app.state.tab_status.cached_text, "keep-me");
+        assert!(!app.render_dirty.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn tab_status_in_flight_suppresses_deadline_and_second_spawn() {
+        let mut app = test_app();
+        app.state.tab_status.config.command = "echo hi".into();
+        app.state.tab_status.config.interval_secs = 15;
+        app.next_tab_status_deadline = Some(Instant::now());
+        app.tab_status_in_flight = true;
+
+        assert_eq!(app.tab_status_deadline(), None);
+        app.start_tab_status_refresh_if_due(Instant::now());
+        assert!(app.tab_status_in_flight);
     }
 
     #[test]

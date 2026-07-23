@@ -143,6 +143,8 @@ pub enum AppEvent {
         results: Vec<WorkspaceGitStatus>,
         cache_updates: Vec<(std::path::PathBuf, GitStatusCacheEntry)>,
     },
+    /// Tab-bar status script finished. `None` means failure/timeout — keep last-good.
+    TabStatusRefreshed { text: Option<String> },
     /// A plugin action or event command finished.
     PluginCommandFinished {
         log_id: String,
