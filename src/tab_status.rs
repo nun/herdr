@@ -68,7 +68,9 @@ pub fn run_tab_status_command(
             Ok(Some(_status)) => {
                 let stdout = stdout_reader
                     .join()
-                    .map_err(|_| TabStatusRunError::Io(std::io::Error::other("stdout reader panicked")))?
+                    .map_err(|_| {
+                        TabStatusRunError::Io(std::io::Error::other("stdout reader panicked"))
+                    })?
                     .map_err(TabStatusRunError::Io)?;
                 return Ok(first_line(&stdout));
             }

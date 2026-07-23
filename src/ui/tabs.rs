@@ -456,14 +456,8 @@ mod tests {
         app.workspaces = vec![ws];
         app.active = Some(0);
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(
-            &app.workspaces[0],
-            app.view.tab_bar_rect,
-            0,
-            true,
-            false,
-            0,
-        );
+        let view =
+            compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false, 0);
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -490,14 +484,8 @@ mod tests {
         app.workspaces = vec![ws];
         app.active = Some(0);
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(
-            &app.workspaces[0],
-            app.view.tab_bar_rect,
-            0,
-            true,
-            false,
-            0,
-        );
+        let view =
+            compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false, 0);
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -543,14 +531,8 @@ mod tests {
         app.active = Some(0);
         app.workspaces = vec![ws];
         app.view.tab_bar_rect = Rect::new(0, 0, 30, 1);
-        let view = compute_tab_bar_view(
-            &app.workspaces[0],
-            app.view.tab_bar_rect,
-            0,
-            true,
-            false,
-            0,
-        );
+        let view =
+            compute_tab_bar_view(&app.workspaces[0], app.view.tab_bar_rect, 0, true, false, 0);
         app.view.tab_hit_areas = view.tab_hit_areas;
 
         let backend = TestBackend::new(30, 1);
@@ -608,7 +590,9 @@ mod tests {
         assert!(view.scroll_left_hit_area.width > 0);
         assert!(view.scroll_right_hit_area.width > 0);
         assert!(view.new_tab_hit_area.width > 0);
-        assert!(view.scroll_right_hit_area.x + view.scroll_right_hit_area.width <= view.status_area.x);
+        assert!(
+            view.scroll_right_hit_area.x + view.scroll_right_hit_area.width <= view.status_area.x
+        );
         assert!(view.new_tab_hit_area.x + view.new_tab_hit_area.width <= view.status_area.x);
     }
 
@@ -644,11 +628,7 @@ mod tests {
             .draw(|frame| render_tab_bar(&app, frame, app.view.tab_bar_rect))
             .unwrap();
 
-        let status_text = buffer_row_text(
-            terminal.backend().buffer(),
-            app.view.tab_status_area,
-            0,
-        );
+        let status_text = buffer_row_text(terminal.backend().buffer(), app.view.tab_status_area, 0);
         assert!(
             status_text.contains('提') || status_text.contains('✓'),
             "status strip: {status_text:?}"

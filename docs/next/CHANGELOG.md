@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Added `[ui.tab_status]` to run a shell command on an interval and paint its first stdout line on the far right of the desktop tab bar (tmux-style status-right). Display-only; follows tab-bar visibility including `ui.hide_tab_bar_when_single_tab`.
+
 ## [0.7.5] - 2026-07-21
 
 ### Breaking Changes

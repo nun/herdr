@@ -829,6 +829,33 @@ mod tests {
         assert_eq!(app.view.new_tab_hit_area, Rect::default());
     }
 
+    #[test]
+    fn hide_tab_bar_when_single_tab_hides_tab_status_strip() {
+        let mut app = crate::app::state::AppState::test_new();
+        app.hide_tab_bar_when_single_tab = true;
+        app.tab_status.config.command = "echo status".into();
+        app.tab_status.config.width = 12;
+        app.tab_status.cached_text = "cached".into();
+        app.workspaces = vec![Workspace::test_new("one")];
+        app.active = Some(0);
+        app.selected = 0;
+        app.mode = Mode::Terminal;
+
+        compute_view(&mut app, Rect::new(0, 0, 80, 20));
+        assert_eq!(app.view.tab_bar_rect, Rect::default());
+        assert_eq!(app.view.tab_status_area, Rect::default());
+
+        app.workspaces[0].test_add_tab(Some("logs"));
+        compute_view(&mut app, Rect::new(0, 0, 80, 20));
+
+        assert!(app.view.tab_bar_rect.width > 0);
+        assert_eq!(app.view.tab_status_area.width, 12);
+        assert_eq!(
+            app.view.tab_status_area.x + app.view.tab_status_area.width,
+            app.view.tab_bar_rect.x + app.view.tab_bar_rect.width
+        );
+    }
+
     #[tokio::test]
     async fn hide_tab_bar_when_single_tab_resizes_background_tabs_per_workspace() {
         let mut app = crate::app::state::AppState::test_new();

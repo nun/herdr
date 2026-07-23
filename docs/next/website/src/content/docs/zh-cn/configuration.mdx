@@ -352,6 +352,19 @@ herdr pane report-metadata <pane_id> \
 
 侧边栏行设置仅影响展开的桌面侧边栏。折叠视图和移动视图仍使用紧凑布局。
 
+### 标签栏状态脚本
+
+可选地按间隔运行 shell 命令，在桌面标签栏最右侧绘制类似 tmux 的状态条：
+
+```toml
+[ui.tab_status]
+command = "date '+%H:%M'"
+interval_secs = 15
+width = 24
+```
+
+仅显示 stdout 的第一行（支持 Unicode；v1 不应用 ANSI 样式）。该条仅用于显示，并跟随桌面标签栏可见性（包括 `ui.hide_tab_bar_when_single_tab`）。`command` 为空或省略时禁用。默认值请在[配置参考](/docs/config-reference/)中搜索 `ui.tab_status`。
+
 ## 通知
 
 当后台智能体完成任务或需要输入时，Herdr 可以通知你：

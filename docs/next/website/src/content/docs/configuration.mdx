@@ -411,6 +411,19 @@ Metadata reporters provide values only; styling stays in the local sidebar confi
 
 Sidebar row settings affect only the expanded desktop sidebar. Collapsed and mobile views keep their compact layouts.
 
+### Tab-bar status script
+
+Optionally paint a tmux-style status strip on the far right of the desktop tab bar by running a shell command on an interval:
+
+```toml
+[ui.tab_status]
+command = "date '+%H:%M'"
+interval_secs = 15
+width = 24
+```
+
+Herdr shows the first line of stdout only (Unicode is fine; ANSI styling is not applied in v1). The strip is display-only and follows desktop tab-bar visibility, including `ui.hide_tab_bar_when_single_tab`. Empty or omitted `command` disables it. Search `ui.tab_status` in the [Config reference](/docs/config-reference/) for the defaults.
+
 ## Notifications
 
 Herdr can notify you when a background agent finishes or needs input:

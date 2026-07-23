@@ -731,11 +731,7 @@ impl App {
             git_refresh_due_after_in_flight: false,
             git_status_cache: HashMap::new(),
             tab_status_in_flight: false,
-            next_tab_status_deadline: config
-                .ui
-                .tab_status
-                .is_enabled()
-                .then(Instant::now),
+            next_tab_status_deadline: config.ui.tab_status.is_enabled().then(Instant::now),
             pending_api_worktree_creates: HashMap::new(),
             pending_api_worktree_removes: HashMap::new(),
             pending_api_worktree_remove_paths: HashMap::new(),
@@ -1443,6 +1439,16 @@ impl App {
                 }
                 self.state.sound = config.ui.sound.clone();
                 self.state.toast_config = config.ui.toast.clone();
+                self.state.tab_status.config = config.ui.tab_status.clone();
+                // Keep last-good cached text until the next successful run of the
+                // (possibly new) command so reloads do not flicker blank.
+                if self.state.tab_status.config.is_enabled() {
+                    if !self.tab_status_in_flight {
+                        self.next_tab_status_deadline = Some(Instant::now());
+                    }
+                } else {
+                    self.next_tab_status_deadline = None;
+                }
             }
         }
 
@@ -2665,6 +2671,43 @@ mod tests {
 
         std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
         restore_xdg_state_home(original_xdg_state_home);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn reload_config_updates_tab_status_and_scheduling() {
+        let _guard = config_env_lock().lock().unwrap();
+        let path = temp_config_path("reload-config-tab-status");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "[ui.tab_status]\ncommand = \"echo hello\"\ninterval_secs = 30\nwidth = 18\n",
+        )
+        .unwrap();
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+
+        let mut app = test_app();
+        app.state.tab_status.cached_text = "last-good".into();
+        assert!(!app.state.tab_status.config.is_enabled());
+        assert_eq!(app.next_tab_status_deadline, None);
+
+        let report = app.reload_config();
+        assert_eq!(report.status, crate::config::ConfigReloadStatus::Applied);
+        assert_eq!(app.state.tab_status.config.command, "echo hello");
+        assert_eq!(app.state.tab_status.config.interval_secs, 30);
+        assert_eq!(app.state.tab_status.config.width, 18);
+        assert_eq!(app.state.tab_status.cached_text, "last-good");
+        assert!(app.next_tab_status_deadline.is_some());
+
+        std::fs::write(&path, "[ui.tab_status]\ncommand = \"\"\n").unwrap();
+        let report = app.reload_config();
+        assert_eq!(report.status, crate::config::ConfigReloadStatus::Applied);
+        assert!(!app.state.tab_status.config.is_enabled());
+        assert_eq!(app.state.tab_status.cached_text, "last-good");
+        assert_eq!(app.next_tab_status_deadline, None);
+        assert_eq!(app.state.tab_status.config.reserved_width(), 0);
+
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
