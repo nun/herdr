@@ -282,6 +282,20 @@ impl App {
                     leave_navigate_mode(&mut self.state);
                 }
             }
+            NavigateAction::PreviousAttentionAgent => {
+                if let Some((idx, ws_idx, pane_id)) = self.relative_attention_agent_entry(false) {
+                    self.focus_pane_internal_via_api(ws_idx, pane_id);
+                    self.state.ensure_agent_panel_entry_visible(idx);
+                    leave_navigate_mode(&mut self.state);
+                }
+            }
+            NavigateAction::NextAttentionAgent => {
+                if let Some((idx, ws_idx, pane_id)) = self.relative_attention_agent_entry(true) {
+                    self.focus_pane_internal_via_api(ws_idx, pane_id);
+                    self.state.ensure_agent_panel_entry_visible(idx);
+                    leave_navigate_mode(&mut self.state);
+                }
+            }
             NavigateAction::NewTab => {
                 if self.state.active.is_some() {
                     if self.state.prompt_new_tab_name {
@@ -387,6 +401,14 @@ impl App {
             }
             NavigateAction::LastPane => {
                 self.last_pane_via_api();
+                leave_navigate_mode(&mut self.state);
+            }
+            NavigateAction::LastTab => {
+                self.last_tab_via_api();
+                leave_navigate_mode(&mut self.state);
+            }
+            NavigateAction::LastWorkspace => {
+                self.last_workspace_via_api();
                 leave_navigate_mode(&mut self.state);
             }
             NavigateAction::Help => super::modal::open_keybind_help(&mut self.state),
@@ -624,6 +646,47 @@ impl App {
         self.focus_pane_internal_via_api(ws_idx, target.pane_id);
     }
 
+    pub(crate) fn last_tab_via_api(&mut self) {
+        let Some(ws_idx) = self.state.active else {
+            return;
+        };
+        let Some(ws) = self.state.workspaces.get(ws_idx) else {
+            return;
+        };
+        let Some(target_pane) = ws.previous_tab else {
+            return;
+        };
+        let Some(tab_idx) = ws.find_tab_index_for_pane(target_pane) else {
+            if let Some(ws) = self.state.workspaces.get_mut(ws_idx) {
+                ws.previous_tab = None;
+            }
+            return;
+        };
+        if tab_idx == ws.active_tab {
+            return;
+        }
+        self.focus_tab_idx_via_api(tab_idx);
+    }
+
+    pub(crate) fn last_workspace_via_api(&mut self) {
+        let Some(target_id) = self.state.previous_workspace_focus.clone() else {
+            return;
+        };
+        let Some(idx) = self
+            .state
+            .workspaces
+            .iter()
+            .position(|ws| ws.id == target_id)
+        else {
+            self.state.previous_workspace_focus = None;
+            return;
+        };
+        if self.state.active == Some(idx) {
+            return;
+        }
+        self.focus_workspace_idx_via_api(idx);
+    }
+
     pub(crate) fn focus_toast_target_via_api(&mut self) {
         let Some(target) = self
             .state
@@ -713,8 +776,34 @@ impl App {
     }
 
     fn relative_agent_entry(&self, forward: bool) -> Option<(usize, usize, crate::layout::PaneId)> {
+        self.relative_agent_entry_matching(forward, |_| true)
+    }
+
+    fn relative_attention_agent_entry(
+        &self,
+        forward: bool,
+    ) -> Option<(usize, usize, crate::layout::PaneId)> {
+        self.relative_agent_entry_matching(forward, |entry| {
+            crate::ui::agent_panel_needs_attention(entry.state, entry.seen)
+        })
+    }
+
+    /// Finds the next/previous agent panel entry matching `matches`, wrapping
+    /// around. The returned index still refers to the full (unfiltered)
+    /// panel, since callers use it for scroll bookkeeping.
+    fn relative_agent_entry_matching(
+        &self,
+        forward: bool,
+        matches: impl Fn(&crate::ui::AgentPanelEntry) -> bool,
+    ) -> Option<(usize, usize, crate::layout::PaneId)> {
         let entries = crate::ui::agent_panel_entries(&self.state);
-        if entries.is_empty() {
+        let eligible: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| matches(entry))
+            .map(|(idx, _)| idx)
+            .collect();
+        if eligible.is_empty() {
             return None;
         }
         let focused = self
@@ -722,16 +811,18 @@ impl App {
             .active
             .and_then(|idx| self.state.workspaces.get(idx))
             .and_then(crate::workspace::Workspace::focused_pane_id);
-        let current_idx = entries
+        let current_pos = entries
             .iter()
-            .position(|entry| Some(entry.pane_id) == focused);
-        let next_idx = match (current_idx, forward) {
-            (Some(idx), true) => (idx + 1) % entries.len(),
-            (Some(0), false) => entries.len() - 1,
-            (Some(idx), false) => idx - 1,
+            .position(|entry| Some(entry.pane_id) == focused)
+            .and_then(|full_idx| eligible.iter().position(|&idx| idx == full_idx));
+        let next_pos = match (current_pos, forward) {
+            (Some(pos), true) => (pos + 1) % eligible.len(),
+            (Some(0), false) => eligible.len() - 1,
+            (Some(pos), false) => pos - 1,
             (None, true) => 0,
-            (None, false) => entries.len() - 1,
+            (None, false) => eligible.len() - 1,
         };
+        let next_idx = eligible[next_pos];
         let target = entries.get(next_idx)?;
         Some((next_idx, target.ws_idx, target.pane_id))
     }
@@ -1298,6 +1389,8 @@ pub(crate) enum NavigateAction {
     NextWorkspace,
     PreviousAgent,
     NextAgent,
+    PreviousAttentionAgent,
+    NextAttentionAgent,
     NewTab,
     RenameTab,
     PreviousTab,
@@ -1323,6 +1416,8 @@ pub(crate) enum NavigateAction {
     CyclePaneNext,
     CyclePanePrevious,
     LastPane,
+    LastTab,
+    LastWorkspace,
     Help,
     Settings,
     ReloadConfig,
@@ -1431,6 +1526,11 @@ fn non_indexed_action_for_key(
         (&kb.next_workspace, NavigateAction::NextWorkspace),
         (&kb.previous_agent, NavigateAction::PreviousAgent),
         (&kb.next_agent, NavigateAction::NextAgent),
+        (
+            &kb.previous_attention_agent,
+            NavigateAction::PreviousAttentionAgent,
+        ),
+        (&kb.next_attention_agent, NavigateAction::NextAttentionAgent),
         (&kb.new_tab, NavigateAction::NewTab),
         (&kb.rename_tab, NavigateAction::RenameTab),
         (&kb.previous_tab, NavigateAction::PreviousTab),
@@ -1448,6 +1548,8 @@ fn non_indexed_action_for_key(
         (&kb.swap_pane_up, NavigateAction::SwapPaneUp),
         (&kb.swap_pane_right, NavigateAction::SwapPaneRight),
         (&kb.last_pane, NavigateAction::LastPane),
+        (&kb.last_tab, NavigateAction::LastTab),
+        (&kb.last_workspace, NavigateAction::LastWorkspace),
         (&kb.cycle_pane_next, NavigateAction::CyclePaneNext),
         (&kb.cycle_pane_previous, NavigateAction::CyclePanePrevious),
         (&kb.split_vertical, NavigateAction::SplitVertical),
@@ -1613,6 +1715,14 @@ pub(super) fn execute_navigate_action_in_context(
             state.next_agent();
             leave_navigate_mode(state);
         }
+        NavigateAction::PreviousAttentionAgent => {
+            state.previous_attention_agent();
+            leave_navigate_mode(state);
+        }
+        NavigateAction::NextAttentionAgent => {
+            state.next_attention_agent();
+            leave_navigate_mode(state);
+        }
         NavigateAction::NewTab => {
             if state.active.is_some() {
                 if state.prompt_new_tab_name {
@@ -1700,6 +1810,14 @@ pub(super) fn execute_navigate_action_in_context(
         }
         NavigateAction::LastPane => {
             state.last_pane();
+            leave_navigate_mode(state);
+        }
+        NavigateAction::LastTab => {
+            state.last_tab();
+            leave_navigate_mode(state);
+        }
+        NavigateAction::LastWorkspace => {
+            state.last_workspace();
             leave_navigate_mode(state);
         }
         NavigateAction::Help => super::modal::open_keybind_help(state),
@@ -2663,6 +2781,45 @@ command = "printf literal > '{}'"
         let _ = std::fs::remove_file(output_path);
     }
 
+    #[test]
+    fn default_prefix_l_maps_to_last_tab() {
+        let state = state_with_workspaces(&["test"]);
+
+        let action = action_for_key(
+            &state,
+            TerminalKey::new(KeyCode::Char('l'), KeyModifiers::empty()),
+            BindingDispatch::Prefix,
+        );
+
+        assert_eq!(action, Some(NavigateAction::LastTab));
+    }
+
+    #[test]
+    fn default_prefix_shift_l_maps_to_last_workspace() {
+        let state = state_with_workspaces(&["test"]);
+
+        let action = action_for_key(
+            &state,
+            TerminalKey::new(KeyCode::Char('l'), KeyModifiers::SHIFT),
+            BindingDispatch::Prefix,
+        );
+
+        assert_eq!(action, Some(NavigateAction::LastWorkspace));
+    }
+
+    #[test]
+    fn default_prefix_arrow_maps_to_pane_focus() {
+        let state = state_with_workspaces(&["test"]);
+
+        let action = action_for_key(
+            &state,
+            TerminalKey::new(KeyCode::Right, KeyModifiers::empty()),
+            BindingDispatch::Prefix,
+        );
+
+        assert_eq!(action, Some(NavigateAction::FocusPaneRight));
+    }
+
     #[tokio::test]
     async fn navigate_mode_runs_prefix_action_rhs_without_pressing_prefix_again() {
         let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2825,7 +2982,7 @@ navigate_pane_down = "ctrl+j"
             app.state.prefix_mods,
         ))
         .await;
-        app.handle_key(TerminalKey::new(KeyCode::Char('h'), KeyModifiers::empty()))
+        app.handle_key(TerminalKey::new(KeyCode::Left, KeyModifiers::empty()))
             .await;
 
         assert_eq!(app.state.workspaces[0].focused_pane_id(), Some(root));

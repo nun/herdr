@@ -23,7 +23,7 @@ Press `prefix+?` at any time to see every active binding.
 | --- | --- |
 | New tab | `prefix+c` |
 | Split right / down | `prefix+v` / `prefix+minus` |
-| Move between panes | `prefix+h/j/k/l` |
+| Move between panes | `prefix+arrows` |
 | Workspace navigation | `prefix+w` |
 | Detach, leave everything running | `prefix+q` |
 
@@ -37,7 +37,7 @@ Panes:
 | --- | --- |
 | Zoom the focused pane | `prefix+z` |
 | Close pane | `prefix+x` |
-| Swap panes | `prefix+shift+h/j/k/l` |
+| Swap panes | `prefix+shift+arrows` |
 | Resize mode | `prefix+r` |
 | Copy mode | `prefix+[` |
 
@@ -46,6 +46,7 @@ Tabs:
 | Action | Key |
 | --- | --- |
 | Next / previous tab | `prefix+n` / `prefix+p` |
+| Last visited tab | `prefix+l` |
 | Jump to tab 1–9 | `prefix+1..9` |
 | Rename tab | `prefix+shift+t` |
 | Close tab | `prefix+shift+x` |
@@ -57,6 +58,7 @@ Workspaces and session:
 | New workspace | `prefix+shift+n` |
 | Rename workspace | `prefix+shift+w` |
 | Close workspace | `prefix+shift+d` |
+| Last visited workspace | `prefix+shift+l` |
 | Goto picker | `prefix+g` |
 | Toggle sidebar | `prefix+b` |
 
@@ -87,10 +89,10 @@ This setup keeps the prefix bindings working and adds direct chords on top:
 
 ```toml
 [keys]
-focus_pane_left = ["prefix+h", "ctrl+alt+h"]
-focus_pane_down = ["prefix+j", "ctrl+alt+j"]
-focus_pane_up = ["prefix+k", "ctrl+alt+k"]
-focus_pane_right = ["prefix+l", "ctrl+alt+l"]
+focus_pane_left = ["prefix+left", "ctrl+alt+h"]
+focus_pane_down = ["prefix+down", "ctrl+alt+j"]
+focus_pane_up = ["prefix+up", "ctrl+alt+k"]
+focus_pane_right = ["prefix+right", "ctrl+alt+l"]
 previous_tab = ["prefix+p", "ctrl+alt+["]
 next_tab = ["prefix+n", "ctrl+alt+]"]
 new_tab = ["prefix+c", "ctrl+alt+c"]

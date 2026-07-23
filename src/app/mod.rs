@@ -516,6 +516,7 @@ impl App {
             workspaces,
             active,
             previous_pane_focus: None,
+            previous_workspace_focus: None,
             selected,
             mode,
             should_quit: false,
@@ -1614,17 +1615,25 @@ impl App {
                     if self.try_route_paste_to_popup(&text) {
                     } else if self.state.mode != Mode::Terminal {
                         self.paste_into_active_text_input(&text);
-                    } else {
-                        if let Some(ws_idx) = self.state.active {
-                            if let Some(ws) = self.state.workspaces.get(ws_idx) {
-                                if let Some(focused) = ws.focused_pane_id() {
-                                    if let Some(runtime) = self.state.runtime_for_pane_in_workspace(
-                                        &self.terminal_runtimes,
-                                        ws_idx,
-                                        focused,
-                                    ) {
-                                        let _ = runtime.try_send_paste(text);
-                                    }
+                    } else if let Some(ws_idx) = self.state.active {
+                        if let Some(ws) = self.state.workspaces.get(ws_idx) {
+                            if let Some(focused) = ws.focused_pane_id() {
+                                if let Some(runtime) = self.state.runtime_for_pane_in_workspace(
+                                    &self.terminal_runtimes,
+                                    ws_idx,
+                                    focused,
+                                ) {
+                                    let _ = runtime.try_send_bytes(bytes::Bytes::from(
+                                        if runtime
+                                            .input_state()
+                                            .map(|s| s.bracketed_paste)
+                                            .unwrap_or(false)
+                                        {
+                                            format!("\x1b[200~{text}\x1b[201~")
+                                        } else {
+                                            text
+                                        },
+                                    ));
                                 }
                             }
                         }
@@ -3088,7 +3097,7 @@ mod tests {
             .keybinds
             .previous_workspace
             .matches_prefix(&KeyEvent::new(KeyCode::Char('l'), KeyModifiers::SHIFT)));
-        assert!(app.state.keybinds.swap_pane_right.bindings.is_empty());
+        assert!(app.state.keybinds.last_workspace.bindings.is_empty());
         assert!(app.state.config_diagnostic.is_none());
 
         std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);

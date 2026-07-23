@@ -1111,6 +1111,15 @@ impl AppState {
     pub fn switch_workspace(&mut self, idx: usize) {
         if idx < self.workspaces.len() {
             let previous_focus = self.current_pane_focus_target();
+            if self.active != Some(idx) {
+                if let Some(previous_ws_idx) = self.active {
+                    if let Some(previous_ws) = self.workspaces.get(previous_ws_idx) {
+                        self.previous_workspace_focus = Some(previous_ws.id.clone());
+                    }
+                }
+            }
+            self.selection = None;
+            self.selection_autoscroll = None;
             self.active = Some(idx);
             self.selected = idx;
             let workspace_id = self.workspaces[idx].id.clone();
@@ -1145,6 +1154,22 @@ impl AppState {
 
         let previous_focus = self.current_pane_focus_target();
         let workspace_changed = self.active != Some(ws_idx);
+        let tab_changed = workspace_changed
+            || self
+                .workspaces
+                .get(ws_idx)
+                .is_some_and(|ws| ws.active_tab != tab_idx);
+        if workspace_changed {
+            if let Some(previous_ws_idx) = self.active {
+                if let Some(previous_ws) = self.workspaces.get(previous_ws_idx) {
+                    self.previous_workspace_focus = Some(previous_ws.id.clone());
+                }
+            }
+        }
+        if tab_changed {
+            self.selection = None;
+            self.selection_autoscroll = None;
+        }
         self.active = Some(ws_idx);
         self.selected = ws_idx;
         let workspace_id = self.workspaces[ws_idx].id.clone();
@@ -1460,8 +1485,41 @@ impl AppState {
 
     #[cfg(test)]
     fn cycle_agent_entry(&mut self, forward: bool) {
+        self.cycle_agent_entry_matching(forward, |_| true);
+    }
+
+    #[cfg(test)]
+    pub fn next_attention_agent(&mut self) {
+        self.cycle_agent_entry_matching(true, |entry| {
+            crate::ui::agent_panel_needs_attention(entry.state, entry.seen)
+        });
+    }
+
+    #[cfg(test)]
+    pub fn previous_attention_agent(&mut self) {
+        self.cycle_agent_entry_matching(false, |entry| {
+            crate::ui::agent_panel_needs_attention(entry.state, entry.seen)
+        });
+    }
+
+    /// Cycles through agent panel entries matching `matches`, wrapping around.
+    /// `matches` filters which entries are eligible targets, but positions
+    /// passed to `focus_agent_entry` still index the full (unfiltered) panel,
+    /// since scroll bookkeeping is keyed off full-list position.
+    #[cfg(test)]
+    fn cycle_agent_entry_matching(
+        &mut self,
+        forward: bool,
+        matches: impl Fn(&crate::ui::AgentPanelEntry) -> bool,
+    ) {
         let entries = crate::ui::agent_panel_entries(self);
-        if entries.is_empty() {
+        let eligible: Vec<usize> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| matches(entry))
+            .map(|(idx, _)| idx)
+            .collect();
+        if eligible.is_empty() {
             return;
         }
 
@@ -1469,17 +1527,18 @@ impl AppState {
             .active
             .and_then(|idx| self.workspaces.get(idx))
             .and_then(crate::workspace::Workspace::focused_pane_id);
-        let current_idx =
-            focused.and_then(|pane_id| entries.iter().position(|entry| entry.pane_id == pane_id));
+        let current_idx = focused
+            .and_then(|pane_id| entries.iter().position(|entry| entry.pane_id == pane_id))
+            .and_then(|full_idx| eligible.iter().position(|&idx| idx == full_idx));
         let target_idx = match (current_idx, forward) {
-            (Some(idx), true) => (idx + 1) % entries.len(),
-            (Some(0), false) => entries.len() - 1,
+            (Some(idx), true) => (idx + 1) % eligible.len(),
+            (Some(0), false) => eligible.len() - 1,
             (Some(idx), false) => idx - 1,
             (None, true) => 0,
-            (None, false) => entries.len() - 1,
+            (None, false) => eligible.len() - 1,
         };
 
-        self.focus_agent_entry(target_idx);
+        self.focus_agent_entry(eligible[target_idx]);
     }
 
     pub(crate) fn ensure_agent_panel_entry_visible(&mut self, idx: usize) {
@@ -1828,6 +1887,44 @@ impl AppState {
             self.previous_pane_focus = current;
             self.mark_session_dirty();
         }
+    }
+
+    #[cfg(test)]
+    pub fn last_tab(&mut self) {
+        let Some(ws_idx) = self.active else {
+            return;
+        };
+        let Some(ws) = self.workspaces.get(ws_idx) else {
+            return;
+        };
+        let Some(target_pane) = ws.previous_tab else {
+            return;
+        };
+        let Some(tab_idx) = ws.find_tab_index_for_pane(target_pane) else {
+            if let Some(ws) = self.workspaces.get_mut(ws_idx) {
+                ws.previous_tab = None;
+            }
+            return;
+        };
+        if tab_idx == ws.active_tab {
+            return;
+        }
+        self.switch_tab(tab_idx);
+    }
+
+    #[cfg(test)]
+    pub fn last_workspace(&mut self) {
+        let Some(target_id) = self.previous_workspace_focus.clone() else {
+            return;
+        };
+        let Some(idx) = self.workspaces.iter().position(|ws| ws.id == target_id) else {
+            self.previous_workspace_focus = None;
+            return;
+        };
+        if self.active == Some(idx) {
+            return;
+        }
+        self.switch_workspace(idx);
     }
 
     pub(crate) fn apply_pane_zoom(
@@ -4166,6 +4263,72 @@ mod tests {
     }
 
     #[test]
+    fn next_attention_agent_skips_working_and_idle_entries() {
+        let mut first = Workspace::test_new("one");
+        let first_root = first.tabs[0].root_pane;
+        let first_second = first.test_split(Direction::Horizontal);
+        first.tabs[0].layout.focus_pane(first_root);
+        let second = Workspace::test_new("two");
+        let second_root = second.tabs[0].root_pane;
+
+        let mut state = AppState::test_new();
+        state.workspaces = vec![first, second];
+        state.ensure_test_terminals();
+        state.active = Some(0);
+        state.selected = 0;
+        state.mode = Mode::Terminal;
+        set_agent_state(&mut state, 0, 0, first_root, AgentState::Blocked);
+        set_agent_state(&mut state, 0, 0, first_second, AgentState::Working);
+        set_agent_state(&mut state, 1, 0, second_root, AgentState::Idle);
+        state.workspaces[1].tabs[0]
+            .panes
+            .get_mut(&second_root)
+            .unwrap()
+            .seen = false;
+
+        state.next_attention_agent();
+        assert_eq!(state.active, Some(1));
+        assert_eq!(state.workspaces[1].focused_pane_id(), Some(second_root));
+
+        state.next_attention_agent();
+        assert_eq!(state.active, Some(0));
+        assert_eq!(state.workspaces[0].focused_pane_id(), Some(first_root));
+        state.assert_invariants_for_test();
+    }
+
+    #[test]
+    fn previous_attention_agent_wraps_and_skips_working_entries_keeping_target_visible() {
+        let mut workspace = Workspace::test_new("one");
+        let root = workspace.tabs[0].root_pane;
+        for idx in 1..8 {
+            workspace.test_add_tab(Some(&format!("tab-{idx}")));
+        }
+
+        let mut state = AppState::test_new();
+        state.workspaces = vec![workspace];
+        state.ensure_test_terminals();
+        state.active = Some(0);
+        state.selected = 0;
+        state.mode = Mode::Terminal;
+        for tab_idx in 0..state.workspaces[0].tabs.len() {
+            let pane_id = state.workspaces[0].tabs[tab_idx].root_pane;
+            set_agent_state(&mut state, 0, tab_idx, pane_id, AgentState::Blocked);
+        }
+        let last_idx = state.workspaces[0].tabs.len() - 1;
+        let last_pane = state.workspaces[0].tabs[last_idx].root_pane;
+        set_agent_state(&mut state, 0, last_idx, last_pane, AgentState::Working);
+        state.workspaces[0].tabs[0].layout.focus_pane(root);
+        crate::ui::compute_view(&mut state, ratatui::layout::Rect::new(0, 0, 80, 14));
+
+        state.previous_attention_agent();
+
+        let expected_idx = last_idx - 1;
+        assert_eq!(state.workspaces[0].active_tab, expected_idx);
+        assert!(state.agent_panel_scroll > 0);
+        state.assert_invariants_for_test();
+    }
+
+    #[test]
     fn switch_workspace_updates_active_and_selected() {
         let mut state = app_with_workspaces(&["a", "b", "c"]);
         state.switch_workspace(2);
@@ -4287,6 +4450,87 @@ mod tests {
         assert_eq!(state.workspaces[1].active_tab, second_tab);
         assert_eq!(state.workspaces[1].focused_pane_id(), Some(second_tab_root));
         assert_ne!(second_first_root, second_tab_root);
+    }
+
+    #[test]
+    fn last_tab_toggles_between_two_tabs_in_workspace() {
+        let mut state = app_with_workspaces(&["one"]);
+        let first_tab = state.workspaces[0].active_tab;
+        let second_tab = state.workspaces[0].test_add_tab(Some("logs"));
+
+        state.switch_tab(second_tab);
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, first_tab);
+
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, second_tab);
+    }
+
+    #[test]
+    fn last_tab_is_scoped_per_workspace() {
+        let mut state = app_with_workspaces(&["one", "two"]);
+        let one_first_tab = state.workspaces[0].active_tab;
+        let one_second_tab = state.workspaces[0].test_add_tab(Some("logs"));
+        let two_first_tab = state.workspaces[1].active_tab;
+        let two_second_tab = state.workspaces[1].test_add_tab(Some("logs"));
+
+        state.switch_tab(one_second_tab);
+        state.switch_workspace(1);
+        state.switch_tab(two_second_tab);
+
+        // Toggling last-tab in workspace two should not be affected by workspace one's history.
+        state.last_tab();
+        assert_eq!(state.workspaces[1].active_tab, two_first_tab);
+
+        state.switch_workspace(0);
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, one_first_tab);
+        assert_eq!(one_first_tab, two_first_tab);
+    }
+
+    #[test]
+    fn last_tab_clears_when_previous_tab_closed() {
+        let mut state = app_with_workspaces(&["one"]);
+        let second_tab = state.workspaces[0].test_add_tab(Some("logs"));
+        state.switch_tab(second_tab);
+
+        let first_tab_root = state.workspaces[0].tabs[0].root_pane;
+        assert!(state.workspaces[0].close_tab(0));
+        assert_eq!(
+            state.workspaces[0].find_tab_index_for_pane(first_tab_root),
+            None
+        );
+
+        let active_before = state.workspaces[0].active_tab;
+        state.last_tab();
+        assert_eq!(state.workspaces[0].active_tab, active_before);
+        assert_eq!(state.workspaces[0].previous_tab, None);
+    }
+
+    #[test]
+    fn last_workspace_toggles_between_two_workspaces() {
+        let mut state = app_with_workspaces(&["one", "two"]);
+
+        state.switch_workspace(1);
+        state.last_workspace();
+        assert_eq!(state.active, Some(0));
+
+        state.last_workspace();
+        assert_eq!(state.active, Some(1));
+    }
+
+    #[test]
+    fn last_workspace_clears_when_previous_workspace_closed() {
+        let mut state = app_with_workspaces(&["one", "two", "three"]);
+        state.switch_workspace(1);
+        state.switch_workspace(2);
+
+        state.workspaces.remove(1);
+        state.active = Some(1);
+
+        state.last_workspace();
+        assert_eq!(state.active, Some(1));
+        assert_eq!(state.previous_workspace_focus, None);
     }
 
     #[test]

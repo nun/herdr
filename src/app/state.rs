@@ -1410,6 +1410,9 @@ pub struct AppState {
     pub workspaces: Vec<Workspace>,
     pub active: Option<usize>,
     pub(crate) previous_pane_focus: Option<PaneFocusTarget>,
+    /// Stable `Workspace::id` of the previously active workspace, used to implement
+    /// "last workspace" MRU toggling. `None` when no prior workspace switch has happened.
+    pub(crate) previous_workspace_focus: Option<String>,
     pub selected: usize,
     pub mode: Mode,
     pub should_quit: bool,
@@ -1787,6 +1790,7 @@ impl AppState {
             workspaces: Vec::new(),
             active: None,
             previous_pane_focus: None,
+            previous_workspace_focus: None,
             selected: 0,
             mode: Mode::Navigate,
             should_quit: false,
