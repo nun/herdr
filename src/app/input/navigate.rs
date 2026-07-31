@@ -411,6 +411,10 @@ impl App {
                 self.last_workspace_via_api();
                 leave_navigate_mode(&mut self.state);
             }
+            NavigateAction::PinWorkspace => {
+                self.toggle_pin_workspace_via_api();
+                leave_navigate_mode(&mut self.state);
+            }
             NavigateAction::Help => super::modal::open_keybind_help(&mut self.state),
             NavigateAction::Settings => super::settings::open_settings(&mut self.state),
             NavigateAction::ReloadConfig => {
@@ -443,6 +447,15 @@ impl App {
     pub(crate) fn close_workspace_idx_via_api(&mut self, ws_idx: usize) {
         let workspace_id = self.public_workspace_id(ws_idx);
         self.runtime_workspace_close("tui.workspace.close", workspace_id);
+    }
+
+    pub(crate) fn toggle_pin_workspace_via_api(&mut self) {
+        let Some(ws_idx) = self.state.pin_target_workspace() else {
+            return;
+        };
+        if let Some(insert_idx) = self.state.toggle_workspace_pinned(ws_idx) {
+            self.move_workspace_via_api(ws_idx, insert_idx);
+        }
     }
 
     pub(crate) fn move_workspace_via_api(&mut self, source_ws_idx: usize, insert_idx: usize) {
@@ -1418,6 +1431,7 @@ pub(crate) enum NavigateAction {
     LastPane,
     LastTab,
     LastWorkspace,
+    PinWorkspace,
     Help,
     Settings,
     ReloadConfig,
@@ -1550,6 +1564,7 @@ fn non_indexed_action_for_key(
         (&kb.last_pane, NavigateAction::LastPane),
         (&kb.last_tab, NavigateAction::LastTab),
         (&kb.last_workspace, NavigateAction::LastWorkspace),
+        (&kb.pin_workspace, NavigateAction::PinWorkspace),
         (&kb.cycle_pane_next, NavigateAction::CyclePaneNext),
         (&kb.cycle_pane_previous, NavigateAction::CyclePanePrevious),
         (&kb.split_vertical, NavigateAction::SplitVertical),
@@ -1818,6 +1833,14 @@ pub(super) fn execute_navigate_action_in_context(
         }
         NavigateAction::LastWorkspace => {
             state.last_workspace();
+            leave_navigate_mode(state);
+        }
+        NavigateAction::PinWorkspace => {
+            if let Some(ws_idx) = state.pin_target_workspace() {
+                if let Some(insert_idx) = state.toggle_workspace_pinned(ws_idx) {
+                    state.move_workspace(ws_idx, insert_idx);
+                }
+            }
             leave_navigate_mode(state);
         }
         NavigateAction::Help => super::modal::open_keybind_help(state),

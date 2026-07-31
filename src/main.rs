@@ -187,6 +187,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # previous_workspace = "" # optional, unset by default
 # next_workspace = ""     # optional, unset by default
 # last_workspace = "prefix+shift+l" # toggle to the last visited workspace
+# pin_workspace = "prefix+shift+f"  # pin/unpin the space, keeping pinned ones on top
 # previous_agent = ""     # optional, unset by default
 # next_agent = ""         # optional, unset by default
 # previous_attention_agent = "" # optional, unset by default; skips agents that aren't blocked/done

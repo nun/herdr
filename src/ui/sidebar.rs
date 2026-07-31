@@ -289,10 +289,26 @@ fn workspace_entry_gap(
     if entry_idx + 1 < entries.len()
         && !(indented && next_entry_is_indented_workspace(entries, entry_idx))
     {
-        app.sidebar_spaces.row_gap
+        if pinned_boundary_entry(app, entries, entry_idx) {
+            // The divider is painted into the gap row, so reserve one even at row_gap = 0.
+            app.sidebar_spaces.row_gap.max(1)
+        } else {
+            app.sidebar_spaces.row_gap
+        }
     } else {
         0
     }
+}
+
+/// True when the entry is the last pinned workspace and an unpinned one follows, i.e.
+/// where the pinned divider goes.
+fn pinned_boundary_entry(app: &AppState, entries: &[WorkspaceListEntry], entry_idx: usize) -> bool {
+    let leading = app.pinned_workspace_count();
+    let pinned = |entry: Option<&WorkspaceListEntry>| match entry {
+        Some(WorkspaceListEntry::Workspace { ws_idx, .. }) => *ws_idx < leading,
+        None => false,
+    };
+    pinned(entries.get(entry_idx)) && !pinned(entries.get(entry_idx + 1))
 }
 
 fn workspace_attention_priority(state: AgentState, seen: bool) -> u8 {
@@ -1194,6 +1210,23 @@ fn render_workspace_list(
     let scrollbar_rect = workspace_list_scrollbar_rect(app, area);
     let cards = &app.view.workspace_card_areas;
 
+    let pinned_count = app.pinned_workspace_count();
+    if let Some(divider_y) = cards
+        .iter()
+        .zip(cards.iter().skip(1))
+        .find(|(card, next)| card.ws_idx < pinned_count && next.ws_idx >= pinned_count)
+        .map(|(card, _)| card.rect.y + card.rect.height)
+        .filter(|y| *y < list_bottom)
+    {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "─".repeat(area.width.saturating_sub(2) as usize),
+                Style::default().fg(p.surface1),
+            ))),
+            Rect::new(area.x + 1, divider_y, area.width.saturating_sub(2), 1),
+        );
+    }
+
     for card in cards {
         let i = card.ws_idx;
         let ws = &app.workspaces[i];
@@ -1659,6 +1692,37 @@ rows = [[{ token = "workspace", bold = false }, { token = "agent", dim = false }
             .add_modifier
             .intersects(Modifier::BOLD | Modifier::DIM));
         assert_eq!(inactive.bg, Some(ratatui::style::Color::Reset));
+    }
+
+    #[test]
+    fn pinned_spaces_are_separated_from_the_rest_by_a_divider_row() {
+        let mut app = crate::app::state::AppState::test_new();
+        app.workspaces = vec![
+            Workspace::test_new("pinned"),
+            Workspace::test_new("loose"),
+            Workspace::test_new("looser"),
+        ];
+        app.workspaces[0].pinned = true;
+        app.active = Some(0);
+        app.mode = Mode::Terminal;
+
+        let area = Rect::new(0, 0, 26, 20);
+        app.view.workspace_card_areas = compute_workspace_card_areas(&app, area);
+        let cards = &app.view.workspace_card_areas;
+        let divider_row = cards[0].rect.y + cards[0].rect.height;
+        assert!(cards[1].rect.y > divider_row - 1, "divider row is reserved");
+
+        let mut terminal = Terminal::new(TestBackend::new(26, 20)).unwrap();
+        terminal
+            .draw(|frame| render_sidebar(&app, &TerminalRuntimeRegistry::new(), frame, area))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+
+        let row: String = (0..26)
+            .map(|x| buffer[(x, divider_row)].symbol())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(row.contains("──────"), "divider row: {row:?}");
     }
 
     #[test]

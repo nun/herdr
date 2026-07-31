@@ -168,6 +168,7 @@ cycle_pane_previous = "prefix+shift+tab"
 last_pane = ""
 last_tab = "prefix+l"
 last_workspace = "prefix+shift+l"
+pin_workspace = "prefix+shift+f"
 split_vertical = "prefix+v"
 split_horizontal = "prefix+minus"
 close_pane = "prefix+x"
@@ -191,6 +192,8 @@ next_tab = ["prefix+n", "ctrl+alt+]"]
 `last_pane` switches back to the last focused pane across workspaces and tabs. It is unset by default.
 
 `last_tab` toggles back to the previously visited tab within the active workspace, and `last_workspace` toggles back to the previously visited workspace, both tmux-`last-window`-style. They default to `prefix+l` and `prefix+shift+l`, which is why pane focus/swap moved to `prefix+left/down/up/right` and `prefix+shift+left/down/up/right`.
+
+`pin_workspace` pins or unpins the current workspace. Pinned workspaces are kept at the top of the sidebar space list, separated from the rest by a divider, and stay pinned across restarts. Unpinning moves the workspace back below the remaining pinned ones. It defaults to `prefix+shift+f`.
 
 `remote_image_paste` is only active in `herdr --remote`. It is the local-client shortcut that sends a local clipboard image to the remote pane. Set it to an empty string to disable the raw-key shortcut; terminal paste-image signals still work when the outer terminal sends them.
 
