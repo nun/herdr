@@ -92,6 +92,7 @@ mod selection;
 mod server;
 mod session;
 mod sound;
+mod tab_status;
 mod terminal;
 mod terminal_modes;
 mod terminal_notify;
@@ -186,6 +187,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # previous_workspace = "" # optional, unset by default
 # next_workspace = ""     # optional, unset by default
 # last_workspace = "prefix+shift+l" # toggle to the last visited workspace
+# pin_workspace = "prefix+shift+f"  # pin/unpin the space, keeping pinned ones on top
 # previous_agent = ""     # optional, unset by default
 # next_agent = ""         # optional, unset by default
 # previous_attention_agent = "" # optional, unset by default; skips agents that aren't blocked/done
@@ -316,6 +318,14 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Hide the tab row when a workspace has exactly one tab.
 # New tabs can still be created with the configured keybinding.
 # hide_tab_bar_when_single_tab = false
+
+# Periodic shell command painted on the far right of the desktop tab bar
+# (tmux-style status-right). Empty/omitted command disables the strip.
+# First line of stdout only; Unicode OK; no ANSI styling in v1.
+# [ui.tab_status]
+# command = "date '+%H:%M'"
+# interval_secs = 15
+# width = 24
 
 # Agent panel ordering: "spaces" (grouped by space) or "priority" (attention queue).
 # "workspaces" is accepted as an alias for "spaces".

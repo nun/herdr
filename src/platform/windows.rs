@@ -148,6 +148,11 @@ pub(crate) fn detached_custom_command_process_platform(command: &str) -> std::pr
     detached_custom_command_process_with_comspec(command, std::env::var_os("ComSpec"))
 }
 
+pub(crate) fn tab_status_command_process_platform(command: &str) -> std::process::Command {
+    // Windows custom commands already use cmd `/c` (non-login).
+    detached_custom_command_process_with_comspec(command, std::env::var_os("ComSpec"))
+}
+
 fn detached_custom_command_process_with_comspec(
     command: &str,
     comspec: Option<std::ffi::OsString>,

@@ -113,6 +113,8 @@ pub struct App {
     pub(crate) git_refresh_in_flight: bool,
     pub(crate) git_refresh_due_after_in_flight: bool,
     pub(crate) git_status_cache: HashMap<std::path::PathBuf, crate::workspace::GitStatusCacheEntry>,
+    pub(crate) tab_status_in_flight: bool,
+    pub(crate) next_tab_status_deadline: Option<Instant>,
     pub(crate) pending_api_worktree_creates: HashMap<std::path::PathBuf, u64>,
     pub(crate) pending_api_worktree_removes: HashMap<String, u64>,
     pub(crate) pending_api_worktree_remove_paths: HashMap<std::path::PathBuf, u64>,
@@ -574,6 +576,9 @@ impl App {
                 tab_scroll_left_hit_area: Rect::default(),
                 tab_scroll_right_hit_area: Rect::default(),
                 new_tab_hit_area: Rect::default(),
+                tab_status_area: Rect::default(),
+                tab_space_area: Rect::default(),
+                tab_space_label: String::new(),
                 terminal_area: Rect::default(),
                 mobile_header_rect: Rect::default(),
                 mobile_menu_hit_area: Rect::default(),
@@ -643,6 +648,10 @@ impl App {
             sound: config.ui.sound.clone(),
             local_sound_playback: true,
             toast_config: config.ui.toast.clone(),
+            tab_status: state::TabStatusState {
+                config: config.ui.tab_status.clone(),
+                cached_text: String::new(),
+            },
             keybinds: config.keybinds(),
             spinner_tick: 0,
             palette: theme_palette,
@@ -723,6 +732,8 @@ impl App {
             git_refresh_in_flight: false,
             git_refresh_due_after_in_flight: false,
             git_status_cache: HashMap::new(),
+            tab_status_in_flight: false,
+            next_tab_status_deadline: config.ui.tab_status.is_enabled().then(Instant::now),
             pending_api_worktree_creates: HashMap::new(),
             pending_api_worktree_removes: HashMap::new(),
             pending_api_worktree_remove_paths: HashMap::new(),
@@ -1430,6 +1441,16 @@ impl App {
                 }
                 self.state.sound = config.ui.sound.clone();
                 self.state.toast_config = config.ui.toast.clone();
+                self.state.tab_status.config = config.ui.tab_status.clone();
+                // Keep last-good cached text until the next successful run of the
+                // (possibly new) command so reloads do not flicker blank.
+                if self.state.tab_status.config.is_enabled() {
+                    if !self.tab_status_in_flight {
+                        self.next_tab_status_deadline = Some(Instant::now());
+                    }
+                } else {
+                    self.next_tab_status_deadline = None;
+                }
             }
         }
 
@@ -2062,6 +2083,52 @@ mod tests {
     }
 
     #[test]
+    fn tab_status_event_updates_cache_and_marks_render_dirty() {
+        let mut app = test_app();
+        app.state.tab_status.config.command = "echo hi".into();
+        app.state.tab_status.cached_text = "old".into();
+        app.tab_status_in_flight = true;
+        app.render_dirty.store(false, Ordering::Release);
+
+        app.handle_internal_event(AppEvent::TabStatusRefreshed {
+            text: Some("new status".into()),
+        });
+
+        assert!(!app.tab_status_in_flight);
+        assert_eq!(app.state.tab_status.cached_text, "new status");
+        assert!(app.render_dirty.load(Ordering::Acquire));
+        assert!(app.next_tab_status_deadline.is_some());
+    }
+
+    #[test]
+    fn tab_status_failure_event_keeps_last_good_cache() {
+        let mut app = test_app();
+        app.state.tab_status.config.command = "echo hi".into();
+        app.state.tab_status.cached_text = "keep-me".into();
+        app.tab_status_in_flight = true;
+        app.render_dirty.store(false, Ordering::Release);
+
+        app.handle_internal_event(AppEvent::TabStatusRefreshed { text: None });
+
+        assert!(!app.tab_status_in_flight);
+        assert_eq!(app.state.tab_status.cached_text, "keep-me");
+        assert!(!app.render_dirty.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn tab_status_in_flight_suppresses_deadline_and_second_spawn() {
+        let mut app = test_app();
+        app.state.tab_status.config.command = "echo hi".into();
+        app.state.tab_status.config.interval_secs = 15;
+        app.next_tab_status_deadline = Some(Instant::now());
+        app.tab_status_in_flight = true;
+
+        assert_eq!(app.tab_status_deadline(), None);
+        app.start_tab_status_refresh_if_due(Instant::now());
+        assert!(app.tab_status_in_flight);
+    }
+
+    #[test]
     fn git_status_event_clears_in_flight_refresh() {
         let mut app = test_app();
         app.git_refresh_in_flight = true;
@@ -2606,6 +2673,43 @@ mod tests {
 
         std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
         restore_xdg_state_home(original_xdg_state_home);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn reload_config_updates_tab_status_and_scheduling() {
+        let _guard = config_env_lock().lock().unwrap();
+        let path = temp_config_path("reload-config-tab-status");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "[ui.tab_status]\ncommand = \"echo hello\"\ninterval_secs = 30\nwidth = 18\n",
+        )
+        .unwrap();
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+
+        let mut app = test_app();
+        app.state.tab_status.cached_text = "last-good".into();
+        assert!(!app.state.tab_status.config.is_enabled());
+        assert_eq!(app.next_tab_status_deadline, None);
+
+        let report = app.reload_config();
+        assert_eq!(report.status, crate::config::ConfigReloadStatus::Applied);
+        assert_eq!(app.state.tab_status.config.command, "echo hello");
+        assert_eq!(app.state.tab_status.config.interval_secs, 30);
+        assert_eq!(app.state.tab_status.config.width, 18);
+        assert_eq!(app.state.tab_status.cached_text, "last-good");
+        assert!(app.next_tab_status_deadline.is_some());
+
+        std::fs::write(&path, "[ui.tab_status]\ncommand = \"\"\n").unwrap();
+        let report = app.reload_config();
+        assert_eq!(report.status, crate::config::ConfigReloadStatus::Applied);
+        assert!(!app.state.tab_status.config.is_enabled());
+        assert_eq!(app.state.tab_status.cached_text, "last-good");
+        assert_eq!(app.next_tab_status_deadline, None);
+        assert_eq!(app.state.tab_status.config.reserved_width(), 0);
+
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

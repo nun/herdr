@@ -157,6 +157,8 @@ pub struct Workspace {
     pub(crate) cached_git_space: Option<GitSpaceMetadata>,
     /// Explicit Herdr-managed worktree grouping provenance.
     pub worktree_space: Option<WorktreeSpaceMembership>,
+    /// Pinned workspaces are kept at the top of the workspace list.
+    pub pinned: bool,
     pub(crate) metadata_tokens: crate::metadata_tokens::MetadataTokens,
     pub(crate) metadata_token_sequences: HashMap<String, u64>,
     /// Public pane numbers within this workspace. Closed pane numbers are not reused.
@@ -221,6 +223,7 @@ impl Workspace {
             cached_git_ahead_behind: None,
             cached_git_space: git_space_metadata(&identity_cwd),
             worktree_space: None,
+            pinned: false,
             metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
             metadata_token_sequences: HashMap::new(),
             public_pane_numbers,
@@ -405,6 +408,7 @@ impl Workspace {
                 cached_git_ahead_behind: None,
                 cached_git_space: None,
                 worktree_space: None,
+                pinned: false,
                 metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
                 metadata_token_sequences: HashMap::new(),
                 public_pane_numbers,
@@ -1224,6 +1228,7 @@ impl Workspace {
             cached_git_ahead_behind: None,
             cached_git_space: None,
             worktree_space: None,
+            pinned: false,
             metadata_tokens: crate::metadata_tokens::MetadataTokens::default(),
             metadata_token_sequences: HashMap::new(),
             public_pane_numbers,

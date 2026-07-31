@@ -31,6 +31,13 @@ pub(crate) fn detached_custom_command_process(command: &str) -> std::process::Co
     process
 }
 
+/// Non-login shell-string process for capturing stdout (`sh -c` / `cmd /c`).
+pub(crate) fn tab_status_command_process(command: &str) -> std::process::Command {
+    let mut process = tab_status_command_process_platform(command);
+    configure_background_command(&mut process);
+    process
+}
+
 pub(crate) fn pane_custom_command_pty_builder(command: &str) -> portable_pty::CommandBuilder {
     pane_custom_command_pty_builder_platform(command)
 }
@@ -330,6 +337,19 @@ mod tests {
             cmd.get_args().collect::<Vec<_>>(),
             [
                 std::ffi::OsStr::new("-lc"),
+                std::ffi::OsStr::new("echo hello")
+            ]
+        );
+    }
+
+    #[test]
+    fn tab_status_command_uses_non_login_shell_flag() {
+        let cmd = tab_status_command_process("echo hello");
+        assert_eq!(cmd.get_program(), std::ffi::OsStr::new("/bin/sh"));
+        assert_eq!(
+            cmd.get_args().collect::<Vec<_>>(),
+            [
+                std::ffi::OsStr::new("-c"),
                 std::ffi::OsStr::new("echo hello")
             ]
         );

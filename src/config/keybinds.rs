@@ -354,6 +354,7 @@ pub struct Keybinds {
     pub last_pane: ActionKeybinds,
     pub last_tab: ActionKeybinds,
     pub last_workspace: ActionKeybinds,
+    pub pin_workspace: ActionKeybinds,
     pub split_vertical: ActionKeybinds,
     pub split_horizontal: ActionKeybinds,
     pub close_pane: ActionKeybinds,
@@ -520,6 +521,7 @@ impl Config {
             last_pane: empty_action!(),
             last_tab: empty_action!(),
             last_workspace: empty_action!(),
+            pin_workspace: empty_action!(),
             split_vertical: empty_action!(),
             split_horizontal: empty_action!(),
             close_pane: empty_action!(),
@@ -667,6 +669,7 @@ impl Config {
             apply_action!(keybinds.last_pane, last_pane, source);
             apply_action!(keybinds.last_tab, last_tab, source);
             apply_action!(keybinds.last_workspace, last_workspace, source);
+            apply_action!(keybinds.pin_workspace, pin_workspace, source);
             apply_action!(keybinds.cycle_pane_next, cycle_pane_next, source);
             apply_action!(keybinds.cycle_pane_previous, cycle_pane_previous, source);
             apply_action!(keybinds.split_vertical, split_vertical, source);

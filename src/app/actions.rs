@@ -1415,6 +1415,47 @@ impl AppState {
         true
     }
 
+    /// Number of pinned workspaces at the top of the list. Counts from the top so a
+    /// manual drag that breaks the pinned block just shrinks the pinned region instead
+    /// of drawing the divider in the wrong place.
+    pub fn pinned_workspace_count(&self) -> usize {
+        self.workspaces
+            .iter()
+            .take_while(|workspace| workspace.pinned)
+            .count()
+    }
+
+    /// Workspace a pin toggle applies to: the highlighted one while navigating, the
+    /// active one otherwise.
+    pub fn pin_target_workspace(&self) -> Option<usize> {
+        let idx = if self.mode == Mode::Navigate {
+            self.selected
+        } else {
+            self.active?
+        };
+        (idx < self.workspaces.len()).then_some(idx)
+    }
+
+    /// Flips the pinned flag and returns the insert index that keeps pinned workspaces
+    /// at the top, for the caller to apply through the workspace move path.
+    pub fn toggle_workspace_pinned(&mut self, ws_idx: usize) -> Option<usize> {
+        let workspace = self.workspaces.get_mut(ws_idx)?;
+        workspace.pinned = !workspace.pinned;
+        let pinned = workspace.pinned;
+        self.mark_session_dirty();
+        if pinned {
+            return Some(0);
+        }
+        // Unpinned workspaces belong right below the remaining pinned ones. The moved
+        // workspace still sits above that slot, so aim one past it.
+        let remaining = self
+            .workspaces
+            .iter()
+            .filter(|workspace| workspace.pinned)
+            .count();
+        Some((remaining + 1).min(self.workspaces.len()))
+    }
+
     pub fn scroll_tabs_left(&mut self) {
         self.tab_scroll_follow_active = false;
         self.tab_scroll = self.tab_scroll.saturating_sub(1);
@@ -1722,21 +1763,30 @@ impl AppState {
             self.view.tab_scroll_left_hit_area = ratatui::layout::Rect::default();
             self.view.tab_scroll_right_hit_area = ratatui::layout::Rect::default();
             self.view.new_tab_hit_area = ratatui::layout::Rect::default();
+            self.view.tab_status_area = ratatui::layout::Rect::default();
+            self.view.tab_space_area = ratatui::layout::Rect::default();
+            self.view.tab_space_label.clear();
             return;
         };
 
+        let space_label = ws.display_name();
         let layout = crate::ui::compute_tab_bar_view(
             ws,
             area,
             self.tab_scroll,
             self.tab_scroll_follow_active,
             self.mouse_capture,
+            self.tab_status.config.reserved_width(),
+            &space_label,
         );
         self.tab_scroll = layout.scroll;
         self.view.tab_hit_areas = layout.tab_hit_areas;
         self.view.tab_scroll_left_hit_area = layout.scroll_left_hit_area;
         self.view.tab_scroll_right_hit_area = layout.scroll_right_hit_area;
         self.view.new_tab_hit_area = layout.new_tab_hit_area;
+        self.view.tab_status_area = layout.status_area;
+        self.view.tab_space_area = layout.space_area;
+        self.view.tab_space_label = space_label;
     }
 }
 
@@ -2932,6 +2982,7 @@ impl AppState {
                 let _ = cache_updates;
                 Vec::new()
             }
+            AppEvent::TabStatusRefreshed { .. } => Vec::new(),
             AppEvent::WorktreeAddFinished(_) => Vec::new(),
             AppEvent::WorktreeRemoveFinished(_) => Vec::new(),
             AppEvent::PluginCommandFinished { .. } => Vec::new(),
@@ -4564,6 +4615,46 @@ mod tests {
         let mut state = app_with_workspaces(&["a"]);
         state.switch_workspace(5);
         assert_eq!(state.active, Some(0));
+    }
+
+    fn toggle_pin(state: &mut AppState, ws_idx: usize) {
+        if let Some(insert_idx) = state.toggle_workspace_pinned(ws_idx) {
+            state.move_workspace(ws_idx, insert_idx);
+        }
+    }
+
+    fn workspace_names(state: &AppState) -> Vec<String> {
+        state
+            .workspaces
+            .iter()
+            .map(|ws| ws.display_name())
+            .collect()
+    }
+
+    #[test]
+    fn pinning_workspaces_stacks_them_at_the_top() {
+        let mut state = app_with_workspaces(&["a", "b", "c", "d"]);
+
+        toggle_pin(&mut state, 2);
+        assert_eq!(workspace_names(&state), vec!["c", "a", "b", "d"]);
+        toggle_pin(&mut state, 3);
+        assert_eq!(workspace_names(&state), vec!["d", "c", "a", "b"]);
+        assert_eq!(state.pinned_workspace_count(), 2);
+    }
+
+    #[test]
+    fn unpinning_moves_workspace_below_remaining_pins() {
+        let mut state = app_with_workspaces(&["a", "b", "c", "d"]);
+        toggle_pin(&mut state, 0);
+        toggle_pin(&mut state, 1);
+        toggle_pin(&mut state, 2);
+        assert_eq!(workspace_names(&state), vec!["c", "b", "a", "d"]);
+
+        toggle_pin(&mut state, 0);
+
+        assert_eq!(workspace_names(&state), vec!["b", "a", "c", "d"]);
+        assert_eq!(state.pinned_workspace_count(), 2);
+        assert!(!state.workspaces[2].pinned);
     }
 
     #[test]

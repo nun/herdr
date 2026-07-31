@@ -21,6 +21,13 @@ pub(crate) fn detached_custom_command_process_platform(command: &str) -> std::pr
     command
 }
 
+pub(crate) fn tab_status_command_process_platform(command: &str) -> std::process::Command {
+    let argv = raw_command_argv(command, "-c");
+    let mut command = std::process::Command::new(&argv[0]);
+    command.args(&argv[1..]);
+    command
+}
+
 pub(crate) fn pane_custom_command_pty_builder_platform(
     command: &str,
 ) -> portable_pty::CommandBuilder {

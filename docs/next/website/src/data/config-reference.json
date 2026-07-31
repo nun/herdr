@@ -350,6 +350,18 @@
           "description": "Focus the next agent shown in the agent panel. Unset by default."
         },
         {
+          "key": "keys.previous_attention_agent",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Focus the previous agent that needs attention. Unset by default."
+        },
+        {
+          "key": "keys.next_attention_agent",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Focus the next agent that needs attention. Unset by default."
+        },
+        {
           "key": "keys.focus_agent",
           "type": "keybinding",
           "default": "unset",
@@ -486,6 +498,24 @@
           "type": "keybinding",
           "default": "unset",
           "description": "Focus the last focused pane across workspaces and tabs. Unset by default."
+        },
+        {
+          "key": "keys.last_tab",
+          "type": "keybinding",
+          "default": "\"prefix+l\"",
+          "description": "Switch to the last visited tab."
+        },
+        {
+          "key": "keys.last_workspace",
+          "type": "keybinding",
+          "default": "\"prefix+shift+l\"",
+          "description": "Switch to the last visited workspace."
+        },
+        {
+          "key": "keys.pin_workspace",
+          "type": "keybinding",
+          "default": "\"prefix+shift+f\"",
+          "description": "Pin or unpin the current workspace, keeping pinned ones at the top of the space list."
         },
         {
           "key": "keys.split_vertical",
@@ -669,6 +699,24 @@
           "type": "boolean",
           "default": "false",
           "description": "Hide the tab row when the workspace has one tab."
+        },
+        {
+          "key": "ui.tab_status.command",
+          "type": "string",
+          "default": "\"\"",
+          "description": "Shell command whose first stdout line is painted on the far right of the desktop tab bar (tmux-style status-right). Empty or omitted disables the strip."
+        },
+        {
+          "key": "ui.tab_status.interval_secs",
+          "type": "integer",
+          "default": "15",
+          "description": "Seconds between tab-status command runs when ui.tab_status.command is set."
+        },
+        {
+          "key": "ui.tab_status.width",
+          "type": "integer",
+          "default": "24",
+          "description": "Display columns reserved for the tab-status strip on the desktop tab bar."
         },
         {
           "key": "ui.agent_panel_sort",

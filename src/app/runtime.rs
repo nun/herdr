@@ -304,6 +304,7 @@ impl App {
         changed |= self.clear_due_selection_highlight(now);
 
         self.start_git_status_refresh_if_due(now);
+        self.start_tab_status_refresh_if_due(now);
 
         if self
             .next_auto_update_check
@@ -559,6 +560,44 @@ impl App {
         });
     }
 
+    pub(crate) fn start_tab_status_refresh_if_due(&mut self, now: Instant) {
+        let Some(deadline) = self.tab_status_deadline() else {
+            return;
+        };
+        if now < deadline {
+            return;
+        }
+
+        let command = self.state.tab_status.config.command.clone();
+        if command.trim().is_empty() {
+            self.next_tab_status_deadline = None;
+            return;
+        }
+
+        self.tab_status_in_flight = true;
+        // Push the next deadline past now so a due tick while in flight does not
+        // look runnable if the guard is ever cleared without rescheduling.
+        let interval = Duration::from_secs(self.state.tab_status.config.interval_secs.max(1));
+        self.next_tab_status_deadline = Some(now + interval);
+
+        let event_tx = self.event_tx.clone();
+        std::thread::spawn(move || {
+            let text = crate::tab_status::run_tab_status_command(
+                &command,
+                crate::tab_status::TAB_STATUS_TIMEOUT,
+            )
+            .ok();
+            let _ = event_tx.blocking_send(AppEvent::TabStatusRefreshed { text });
+        });
+    }
+
+    pub(crate) fn tab_status_deadline(&self) -> Option<Instant> {
+        if self.tab_status_in_flight || !self.state.tab_status.config.is_enabled() {
+            return None;
+        }
+        self.next_tab_status_deadline
+    }
+
     pub(crate) fn mark_git_status_refresh_due(&mut self, now: Instant) {
         if self.git_refresh_in_flight {
             self.git_refresh_due_after_in_flight = true;
@@ -614,6 +653,7 @@ impl App {
             include_git_refresh
                 .then(|| self.git_refresh_deadline())
                 .flatten(),
+            self.tab_status_deadline(),
             self.next_auto_update_check,
             self.next_agent_manifest_update_check,
             self.agent_metadata_deadline,
