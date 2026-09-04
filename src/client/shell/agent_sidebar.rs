@@ -17,6 +17,13 @@ struct AgentRow {
     rows: Vec<Vec<crate::ui::ResolvedToken>>,
 }
 
+pub(super) fn agent_needs_attention(status: crate::api::schema::AgentStatus) -> bool {
+    matches!(
+        status,
+        crate::api::schema::AgentStatus::Blocked | crate::api::schema::AgentStatus::Done
+    )
+}
+
 pub(super) fn ordered_agent_pane_ids(
     snapshot: &ClientShellSnapshot,
     sort: crate::config::AgentPanelSortConfig,

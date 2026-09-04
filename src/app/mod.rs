@@ -1978,7 +1978,7 @@ mod tests {
             .keybinds
             .previous_workspace
             .matches_prefix(&KeyEvent::new(KeyCode::Char('l'), KeyModifiers::SHIFT)));
-        assert!(app.state.keybinds.swap_pane_right.bindings.is_empty());
+        assert!(app.state.keybinds.last_workspace.bindings.is_empty());
         assert!(app.state.config_diagnostic.is_none());
 
         std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
