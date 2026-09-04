@@ -23,7 +23,7 @@ Herdr 是鼠标原生的。你可以点击窗格、标签页、工作区和智�
 | --- | --- |
 | 新建标签页 | `prefix+c` |
 | 向右 / 向下分割 | `prefix+v` / `prefix+minus` |
-| 在窗格间移动 | `prefix+h/j/k/l` |
+| 在窗格间移动 | `prefix+arrows` |
 | 工作区导航 | `prefix+w` |
 | 分离并让一切继续运行 | `prefix+q` |
 
@@ -37,7 +37,7 @@ Herdr 是鼠标原生的。你可以点击窗格、标签页、工作区和智�
 | --- | --- |
 | 缩放聚焦的窗格 | `prefix+z` |
 | 关闭窗格 | `prefix+x` |
-| 交换窗格 | `prefix+shift+h/j/k/l` |
+| 交换窗格 | `prefix+shift+arrows` |
 | 调整大小模式 | `prefix+r` |
 | 复制模式 | `prefix+[` |
 
@@ -46,6 +46,7 @@ Herdr 是鼠标原生的。你可以点击窗格、标签页、工作区和智�
 | 动作 | 按键 |
 | --- | --- |
 | 下一个 / 上一个标签页 | `prefix+n` / `prefix+p` |
+| 上一个访问的标签页 | `prefix+l` |
 | 跳转到标签页 1–9 | `prefix+1..9` |
 | 重命名标签页 | `prefix+shift+t` |
 | 关闭标签页 | `prefix+shift+x` |
@@ -57,6 +58,7 @@ Herdr 是鼠标原生的。你可以点击窗格、标签页、工作区和智�
 | 新建工作区 | `prefix+shift+n` |
 | 重命名工作区 | `prefix+shift+w` |
 | 关闭工作区 | `prefix+shift+d` |
+| 上一个访问的工作区 | `prefix+shift+l` |
 | Goto 选择器 | `prefix+g` |
 | 切换侧边栏 | `prefix+b` |
 
@@ -87,10 +89,10 @@ prefix = "ctrl+a"
 
 ```toml
 [keys]
-focus_pane_left = ["prefix+h", "ctrl+alt+h"]
-focus_pane_down = ["prefix+j", "ctrl+alt+j"]
-focus_pane_up = ["prefix+k", "ctrl+alt+k"]
-focus_pane_right = ["prefix+l", "ctrl+alt+l"]
+focus_pane_left = ["prefix+left", "ctrl+alt+h"]
+focus_pane_down = ["prefix+down", "ctrl+alt+j"]
+focus_pane_up = ["prefix+up", "ctrl+alt+k"]
+focus_pane_right = ["prefix+right", "ctrl+alt+l"]
 previous_tab = ["prefix+p", "ctrl+alt+["]
 next_tab = ["prefix+n", "ctrl+alt+]"]
 new_tab = ["prefix+c", "ctrl+alt+c"]

@@ -620,6 +620,18 @@
           "description": "Focus the next agent shown in the agent panel. Unset by default."
         },
         {
+          "key": "keys.previous_attention_agent",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Focus the previous agent needing attention (blocked or done), skipping working/idle agents. Unset by default."
+        },
+        {
+          "key": "keys.next_attention_agent",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Focus the next agent needing attention (blocked or done), skipping working/idle agents. Unset by default."
+        },
+        {
           "key": "keys.focus_agent",
           "type": "keybinding",
           "default": "unset",
@@ -706,49 +718,49 @@
         {
           "key": "keys.focus_pane_left",
           "type": "keybinding",
-          "default": "\"prefix+h\"",
+          "default": "\"prefix+left\"",
           "description": "Focus the pane to the left."
         },
         {
           "key": "keys.focus_pane_down",
           "type": "keybinding",
-          "default": "\"prefix+j\"",
+          "default": "\"prefix+down\"",
           "description": "Focus the pane below."
         },
         {
           "key": "keys.focus_pane_up",
           "type": "keybinding",
-          "default": "\"prefix+k\"",
+          "default": "\"prefix+up\"",
           "description": "Focus the pane above."
         },
         {
           "key": "keys.focus_pane_right",
           "type": "keybinding",
-          "default": "\"prefix+l\"",
+          "default": "\"prefix+right\"",
           "description": "Focus the pane to the right."
         },
         {
           "key": "keys.swap_pane_left",
           "type": "keybinding",
-          "default": "\"prefix+shift+h\"",
+          "default": "\"prefix+shift+left\"",
           "description": "Swap the focused pane with the pane to the left."
         },
         {
           "key": "keys.swap_pane_down",
           "type": "keybinding",
-          "default": "\"prefix+shift+j\"",
+          "default": "\"prefix+shift+down\"",
           "description": "Swap the focused pane with the pane below."
         },
         {
           "key": "keys.swap_pane_up",
           "type": "keybinding",
-          "default": "\"prefix+shift+k\"",
+          "default": "\"prefix+shift+up\"",
           "description": "Swap the focused pane with the pane above."
         },
         {
           "key": "keys.swap_pane_right",
           "type": "keybinding",
-          "default": "\"prefix+shift+l\"",
+          "default": "\"prefix+shift+right\"",
           "description": "Swap the focused pane with the pane to the right."
         },
         {
@@ -768,6 +780,18 @@
           "type": "keybinding",
           "default": "unset",
           "description": "Focus the last focused pane across workspaces and tabs. Unset by default."
+        },
+        {
+          "key": "keys.last_tab",
+          "type": "keybinding",
+          "default": "\"prefix+l\"",
+          "description": "Select the last visited tab in the active workspace."
+        },
+        {
+          "key": "keys.last_workspace",
+          "type": "keybinding",
+          "default": "\"prefix+shift+l\"",
+          "description": "Select the last visited workspace."
         },
         {
           "key": "keys.split_vertical",

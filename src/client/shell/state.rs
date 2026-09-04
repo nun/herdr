@@ -891,6 +891,8 @@ pub(crate) struct ClientShellState {
     pub(super) navigate_workspace_id: Option<String>,
     pub(super) overlay: Option<ClientShellOverlay>,
     pub(super) previous_pane_id: Option<String>,
+    pub(super) previous_workspace_id: Option<String>,
+    pub(super) previous_tab_by_workspace: HashMap<String, String>,
     pub(super) pane_mouse_gesture: Option<ClientPaneMouseGesture>,
     pub(super) url_click_consumes_until_up: bool,
     pub(super) replaying_url_click: bool,
@@ -1033,6 +1035,8 @@ impl ClientShellState {
             navigate_workspace_id: None,
             overlay,
             previous_pane_id: None,
+            previous_workspace_id: None,
+            previous_tab_by_workspace: HashMap::new(),
             pane_mouse_gesture: None,
             url_click_consumes_until_up: false,
             replaying_url_click: false,
@@ -1173,6 +1177,61 @@ impl ClientShellState {
         }
     }
 
+    fn record_navigation_history(&mut self, snapshot: &ClientShellSnapshot) {
+        let Some(current) = self.snapshot.as_deref() else {
+            return;
+        };
+        if let Some(previous) = current
+            .focused_pane_id
+            .as_ref()
+            .filter(|previous| Some(previous.as_str()) != snapshot.focused_pane_id.as_deref())
+        {
+            self.previous_pane_id = Some(previous.clone());
+        }
+        if let Some(previous) = current
+            .focused_workspace_id
+            .as_ref()
+            .filter(|previous| Some(previous.as_str()) != snapshot.focused_workspace_id.as_deref())
+        {
+            self.previous_workspace_id = Some(previous.clone());
+        }
+        if current.focused_workspace_id == snapshot.focused_workspace_id {
+            if let Some(previous_tab) = current
+                .focused_tab_id
+                .as_ref()
+                .filter(|tab_id| Some(tab_id.as_str()) != snapshot.focused_tab_id.as_deref())
+            {
+                if let Some(workspace_id) = current.focused_workspace_id.clone() {
+                    self.previous_tab_by_workspace
+                        .insert(workspace_id, previous_tab.clone());
+                }
+            }
+        }
+        self.prune_navigation_history(snapshot);
+    }
+
+    fn prune_navigation_history(&mut self, snapshot: &ClientShellSnapshot) {
+        if self
+            .previous_workspace_id
+            .as_ref()
+            .is_some_and(|workspace_id| {
+                !snapshot
+                    .workspaces
+                    .iter()
+                    .any(|workspace| &workspace.workspace_id == workspace_id)
+            })
+        {
+            self.previous_workspace_id = None;
+        }
+        self.previous_tab_by_workspace
+            .retain(|workspace_id, tab_id| {
+                snapshot
+                    .tabs
+                    .iter()
+                    .any(|tab| &tab.workspace_id == workspace_id && &tab.tab_id == tab_id)
+            });
+    }
+
     pub(crate) fn set_snapshot(&mut self, mut snapshot: Box<ClientShellSnapshot>) {
         snapshot
             .commands
@@ -1268,6 +1327,8 @@ impl ClientShellState {
                 .startup_onboarding
                 .then_some(ClientShellOverlay::Onboarding);
             self.previous_pane_id = None;
+            self.previous_workspace_id = None;
+            self.previous_tab_by_workspace.clear();
             self.pane_mouse_gesture = None;
             self.url_click_consumes_until_up = false;
             self.replaying_url_click = false;
@@ -1283,13 +1344,8 @@ impl ClientShellState {
             self.copy_feedback_deadline = None;
             self.host_mouse_pixels = None;
             self.dismissed_product_announcement = None;
-        } else if let Some(previous) = self
-            .snapshot
-            .as_deref()
-            .and_then(|current| current.focused_pane_id.as_ref())
-            .filter(|previous| Some(previous.as_str()) != snapshot.focused_pane_id.as_deref())
-        {
-            self.previous_pane_id = Some(previous.clone());
+        } else {
+            self.record_navigation_history(&snapshot);
         }
         if snapshot_keybindings_changed {
             if let Err(err) = self.config.apply_snapshot_keybindings(

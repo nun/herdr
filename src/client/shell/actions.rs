@@ -904,36 +904,31 @@ impl ClientShellState {
                     pane_id: agents.get(index)?.clone(),
                 }))
             }
-            KeybindAction::PreviousAgent | KeybindAction::NextAgent => {
+            KeybindAction::PreviousAgent => {
+                let focused = snapshot.focused_pane_id.clone();
                 let agents = super::agent_sidebar::ordered_agent_pane_ids(
                     snapshot,
                     self.config.agent_panel_sort,
                 );
-                if agents.is_empty() {
-                    return None;
-                }
-                let current = agents.iter().position(|pane_id| {
-                    Some(pane_id.as_str()) == snapshot.focused_pane_id.as_deref()
-                });
-                let next = match (current, action) {
-                    (Some(current), KeybindAction::PreviousAgent) => {
-                        (current + agents.len() - 1) % agents.len()
-                    }
-                    (Some(current), KeybindAction::NextAgent) => (current + 1) % agents.len(),
-                    (None, KeybindAction::PreviousAgent) => agents.len() - 1,
-                    (None, KeybindAction::NextAgent) => 0,
-                    _ => unreachable!("relative agent action"),
-                };
-                let pane_id = agents[next].clone();
-                if !self
-                    .hits
-                    .agents
-                    .iter()
-                    .any(|(_, visible_pane_id)| visible_pane_id == &pane_id)
-                {
-                    self.agent_scroll = next.min(self.hits.agent_max_scroll);
-                }
-                Some(Method::PaneFocus(PaneTarget { pane_id }))
+                self.focus_relative_agent(agents, focused.as_deref(), false)
+            }
+            KeybindAction::NextAgent => {
+                let focused = snapshot.focused_pane_id.clone();
+                let agents = super::agent_sidebar::ordered_agent_pane_ids(
+                    snapshot,
+                    self.config.agent_panel_sort,
+                );
+                self.focus_relative_agent(agents, focused.as_deref(), true)
+            }
+            KeybindAction::PreviousAttentionAgent => {
+                let focused = snapshot.focused_pane_id.clone();
+                let agents = self.attention_agent_pane_ids(snapshot);
+                self.focus_relative_agent(agents, focused.as_deref(), false)
+            }
+            KeybindAction::NextAttentionAgent => {
+                let focused = snapshot.focused_pane_id.clone();
+                let agents = self.attention_agent_pane_ids(snapshot);
+                self.focus_relative_agent(agents, focused.as_deref(), true)
             }
             KeybindAction::SwitchWorkspace(index) => {
                 let entries = self.navigation_workspace_entries(snapshot);
@@ -1107,6 +1102,33 @@ impl ClientShellState {
                     pane_id: pane_id.clone(),
                 }))
             }
+            KeybindAction::LastTab => {
+                let tab_id = self.previous_tab_by_workspace.get(&focused_workspace)?;
+                if Some(tab_id.as_str()) == focused_tab.as_deref()
+                    || !snapshot
+                        .tabs
+                        .iter()
+                        .any(|tab| tab.tab_id == *tab_id && tab.workspace_id == focused_workspace)
+                {
+                    return None;
+                }
+                Some(Method::TabFocus(TabTarget {
+                    tab_id: tab_id.clone(),
+                }))
+            }
+            KeybindAction::LastWorkspace => {
+                let workspace_id = self.previous_workspace_id.clone()?;
+                if workspace_id == focused_workspace
+                    || !snapshot
+                        .workspaces
+                        .iter()
+                        .any(|workspace| workspace.workspace_id == workspace_id)
+                {
+                    return None;
+                }
+                self.reveal_workspace(&workspace_id);
+                Some(Method::WorkspaceFocus(WorkspaceTarget { workspace_id }))
+            }
             KeybindAction::Zoom => Some(Method::PaneZoom(PaneZoomParams {
                 pane_id: focused_pane,
                 mode: PaneZoomMode::Toggle,
@@ -1124,5 +1146,49 @@ impl ClientShellState {
             })),
             _ => None,
         }
+    }
+
+    fn attention_agent_pane_ids(&self, snapshot: &ClientShellSnapshot) -> Vec<String> {
+        super::agent_sidebar::ordered_agent_pane_ids(snapshot, self.config.agent_panel_sort)
+            .into_iter()
+            .filter(|pane_id| {
+                snapshot.agents.iter().any(|agent| {
+                    &agent.pane_id == pane_id
+                        && super::agent_sidebar::agent_needs_attention(agent.agent_status)
+                })
+            })
+            .collect()
+    }
+
+    fn focus_relative_agent(
+        &mut self,
+        agents: Vec<String>,
+        focused_pane: Option<&str>,
+        forward: bool,
+    ) -> Option<crate::api::schema::Method> {
+        use crate::api::schema::{Method, PaneTarget};
+
+        if agents.is_empty() {
+            return None;
+        }
+        let current = agents
+            .iter()
+            .position(|pane_id| Some(pane_id.as_str()) == focused_pane);
+        let next = match (current, forward) {
+            (Some(current), true) => (current + 1) % agents.len(),
+            (Some(current), false) => (current + agents.len() - 1) % agents.len(),
+            (None, true) => 0,
+            (None, false) => agents.len() - 1,
+        };
+        let pane_id = agents[next].clone();
+        if !self
+            .hits
+            .agents
+            .iter()
+            .any(|(_, visible_pane_id)| visible_pane_id == &pane_id)
+        {
+            self.agent_scroll = next.min(self.hits.agent_max_scroll);
+        }
+        Some(Method::PaneFocus(PaneTarget { pane_id }))
     }
 }

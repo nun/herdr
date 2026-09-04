@@ -23,7 +23,7 @@ Herdr はマウスネイティブです。キーバインドをひとつも覚�
 | --- | --- |
 | 新しいタブ | `prefix+c` |
 | 右 / 下に分割 | `prefix+v` / `prefix+minus` |
-| ペイン間の移動 | `prefix+h/j/k/l` |
+| ペイン間の移動 | `prefix+arrows` |
 | ワークスペースナビゲーション | `prefix+w` |
 | すべてを動かしたままデタッチ | `prefix+q` |
 
@@ -37,7 +37,7 @@ Herdr はマウスネイティブです。キーバインドをひとつも覚�
 | --- | --- |
 | フォーカス中のペインをズーム | `prefix+z` |
 | ペインを閉じる | `prefix+x` |
-| ペインを入れ替える | `prefix+shift+h/j/k/l` |
+| ペインを入れ替える | `prefix+shift+arrows` |
 | リサイズモード | `prefix+r` |
 | コピーモード | `prefix+[` |
 
@@ -46,6 +46,7 @@ Herdr はマウスネイティブです。キーバインドをひとつも覚�
 | アクション | キー |
 | --- | --- |
 | 次 / 前のタブ | `prefix+n` / `prefix+p` |
+| 直前のタブ | `prefix+l` |
 | タブ 1–9 にジャンプ | `prefix+1..9` |
 | タブの名前を変更 | `prefix+shift+t` |
 | タブを閉じる | `prefix+shift+x` |
@@ -57,6 +58,7 @@ Herdr はマウスネイティブです。キーバインドをひとつも覚�
 | 新しいワークスペース | `prefix+shift+n` |
 | ワークスペースの名前を変更 | `prefix+shift+w` |
 | ワークスペースを閉じる | `prefix+shift+d` |
+| 直前のワークスペース | `prefix+shift+l` |
 | Goto ピッカー | `prefix+g` |
 | サイドバーの表示切り替え | `prefix+b` |
 
@@ -87,10 +89,10 @@ Herdr のアクションを、プレフィックス不要の直接コードに�
 
 ```toml
 [keys]
-focus_pane_left = ["prefix+h", "ctrl+alt+h"]
-focus_pane_down = ["prefix+j", "ctrl+alt+j"]
-focus_pane_up = ["prefix+k", "ctrl+alt+k"]
-focus_pane_right = ["prefix+l", "ctrl+alt+l"]
+focus_pane_left = ["prefix+left", "ctrl+alt+h"]
+focus_pane_down = ["prefix+down", "ctrl+alt+j"]
+focus_pane_up = ["prefix+up", "ctrl+alt+k"]
+focus_pane_right = ["prefix+right", "ctrl+alt+l"]
 previous_tab = ["prefix+p", "ctrl+alt+["]
 next_tab = ["prefix+n", "ctrl+alt+]"]
 new_tab = ["prefix+c", "ctrl+alt+c"]
