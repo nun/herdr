@@ -728,6 +728,12 @@ pub(super) struct ClientVisibleNotification {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct AttentionJumpTarget {
+    pub(super) endpoint_id: ClientEndpointId,
+    pub(super) pane_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ClientInputTarget {
     Pane(String),
     Popup(String),
@@ -880,6 +886,8 @@ pub(crate) struct ClientShellState {
     pub(super) reveal_navigation_workspace: bool,
     pub(super) overlay: Option<ClientShellOverlay>,
     pub(super) previous_pane_id: Option<String>,
+    pub(super) previous_workspace_id: Option<String>,
+    pub(super) previous_tab_by_workspace: HashMap<String, String>,
     pub(super) pane_mouse_gesture: Option<ClientPaneMouseGesture>,
     pub(super) link_hover: Option<super::link_hover::LinkHover>,
     pub(super) url_click_consumes_until_up: bool,
@@ -912,6 +920,7 @@ pub(crate) struct ClientShellState {
     pub(super) pending_notifications: Vec<ClientPendingNotification>,
     pub(super) visible_notification: Option<ClientVisibleNotification>,
     pub(super) queued_notifications: VecDeque<ClientVisibleNotification>,
+    pub(super) attention_targets: VecDeque<AttentionJumpTarget>,
     pub(super) endpoint_notice_seen: HashSet<ClientEndpointNoticeKey>,
     pub(super) visible_endpoint_notice: Option<ClientVisibleEndpointNotice>,
     pub(super) outer_focused: Option<bool>,
@@ -1042,6 +1051,8 @@ impl ClientShellState {
             reveal_navigation_workspace: false,
             overlay,
             previous_pane_id: None,
+            previous_workspace_id: None,
+            previous_tab_by_workspace: HashMap::new(),
             pane_mouse_gesture: None,
             link_hover: None,
             url_click_consumes_until_up: false,
@@ -1074,6 +1085,7 @@ impl ClientShellState {
             pending_notifications: Vec::new(),
             visible_notification: None,
             queued_notifications: VecDeque::new(),
+            attention_targets: VecDeque::new(),
             endpoint_notice_seen: HashSet::new(),
             visible_endpoint_notice: None,
             outer_focused: None,
@@ -1196,6 +1208,61 @@ impl ClientShellState {
         }
     }
 
+    fn record_navigation_history(&mut self, snapshot: &ClientShellSnapshot) {
+        let Some(current) = self.snapshot.as_deref() else {
+            return;
+        };
+        if let Some(previous) = current
+            .focused_pane_id
+            .as_ref()
+            .filter(|previous| Some(previous.as_str()) != snapshot.focused_pane_id.as_deref())
+        {
+            self.previous_pane_id = Some(previous.clone());
+        }
+        if let Some(previous) = current
+            .focused_workspace_id
+            .as_ref()
+            .filter(|previous| Some(previous.as_str()) != snapshot.focused_workspace_id.as_deref())
+        {
+            self.previous_workspace_id = Some(previous.clone());
+        }
+        if current.focused_workspace_id == snapshot.focused_workspace_id {
+            if let Some(previous_tab) = current
+                .focused_tab_id
+                .as_ref()
+                .filter(|tab_id| Some(tab_id.as_str()) != snapshot.focused_tab_id.as_deref())
+            {
+                if let Some(workspace_id) = current.focused_workspace_id.clone() {
+                    self.previous_tab_by_workspace
+                        .insert(workspace_id, previous_tab.clone());
+                }
+            }
+        }
+        self.prune_navigation_history(snapshot);
+    }
+
+    fn prune_navigation_history(&mut self, snapshot: &ClientShellSnapshot) {
+        if self
+            .previous_workspace_id
+            .as_ref()
+            .is_some_and(|workspace_id| {
+                !snapshot
+                    .workspaces
+                    .iter()
+                    .any(|workspace| &workspace.workspace_id == workspace_id)
+            })
+        {
+            self.previous_workspace_id = None;
+        }
+        self.previous_tab_by_workspace
+            .retain(|workspace_id, tab_id| {
+                snapshot
+                    .tabs
+                    .iter()
+                    .any(|tab| &tab.workspace_id == workspace_id && &tab.tab_id == tab_id)
+            });
+    }
+
     pub(super) fn reset_endpoint_projection(&mut self) {
         self.hits = ShellHitMap::default();
         self.pane_surface = None;
@@ -1234,6 +1301,8 @@ impl ClientShellState {
             .startup_onboarding
             .then_some(ClientShellOverlay::Onboarding);
         self.previous_pane_id = None;
+        self.previous_workspace_id = None;
+        self.previous_tab_by_workspace.clear();
         self.pane_mouse_gesture = None;
         self.link_hover = None;
         self.url_click_consumes_until_up = false;
@@ -1344,13 +1413,8 @@ impl ClientShellState {
                 .flatten();
             self.reset_endpoint_projection();
             self.navigate_workspace_id = preview;
-        } else if let Some(previous) = self
-            .snapshot
-            .as_deref()
-            .and_then(|current| current.focused_pane_id.as_ref())
-            .filter(|previous| Some(previous.as_str()) != snapshot.focused_pane_id.as_deref())
-        {
-            self.previous_pane_id = Some(previous.clone());
+        } else {
+            self.record_navigation_history(&snapshot);
         }
         if snapshot_keybindings_changed {
             if let Err(err) = self.config.apply_snapshot_keybindings(

@@ -430,6 +430,171 @@ fn pane_cycle_last_and_agent_actions_resolve_to_stable_pane_ids() {
 }
 
 #[test]
+fn last_tab_toggles_previously_visited_tab_in_the_active_workspace() {
+    let mut initial = snapshot();
+    let mut second_tab = initial.tabs[0].clone();
+    second_tab.tab_id = "tab_2".into();
+    second_tab.number = 2;
+    second_tab.label = "2".into();
+    second_tab.focused = false;
+    initial.tabs.push(second_tab);
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(initial.clone()));
+
+    let mut switched = initial;
+    switched.revision = 2;
+    switched.focused_tab_id = Some("tab_2".into());
+    switched.tabs[0].focused = false;
+    switched.tabs[1].focused = true;
+    switched.workspaces[0].active_tab_id = "tab_2".into();
+    state.set_snapshot(Box::new(switched));
+
+    let mut last = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::LastTab),
+        &mut last,
+    );
+    let [ClientShellAction::Endpoint { request, .. }] = &last.actions[..] else {
+        panic!("last tab should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::TabFocus(target) if target.tab_id == "tab_1"
+    ));
+}
+
+#[test]
+fn last_workspace_toggles_previously_visited_workspace() {
+    let mut initial = snapshot();
+    initial.workspaces.push(ClientShellWorkspace {
+        workspace_id: "ws_2".into(),
+        active_tab_id: "tab_2".into(),
+        new_workspace_cwd: "/repo-two".into(),
+        number: 2,
+        label: "other".into(),
+        custom_label: false,
+        branch: None,
+        git_ahead_behind: None,
+        tokens: Vec::new(),
+        worktree: None,
+        focused: false,
+        agent_status: AgentStatus::Idle,
+    });
+    initial.tabs.push(ClientShellTab {
+        tab_id: "tab_2".into(),
+        workspace_id: "ws_2".into(),
+        number: 1,
+        label: "1".into(),
+        custom_label: false,
+        zoomed: false,
+        focused: false,
+        agent_status: AgentStatus::Idle,
+    });
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(initial.clone()));
+
+    let mut switched = initial;
+    switched.revision = 2;
+    switched.focused_workspace_id = Some("ws_2".into());
+    switched.focused_tab_id = Some("tab_2".into());
+    switched.workspaces[0].focused = false;
+    switched.workspaces[1].focused = true;
+    switched.tabs[0].focused = false;
+    switched.tabs[1].focused = true;
+    state.set_snapshot(Box::new(switched));
+
+    let mut last = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::LastWorkspace),
+        &mut last,
+    );
+    let [ClientShellAction::Endpoint { request, .. }] = &last.actions[..] else {
+        panic!("last workspace should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::WorkspaceFocus(target) if target.workspace_id == "ws_1"
+    ));
+}
+
+#[test]
+fn next_attention_agent_skips_working_and_idle_entries() {
+    let mut projected = snapshot();
+    let mut second_pane = projected.panes[0].clone();
+    second_pane.pane_id = "pane_2".into();
+    second_pane.focused = false;
+    projected.panes.push(second_pane.clone());
+    let mut third_pane = second_pane;
+    third_pane.pane_id = "pane_3".into();
+    projected.panes.push(third_pane);
+    projected.agents = vec![
+        ClientShellAgent {
+            pane_id: "pane_1".into(),
+            workspace_id: "ws_1".into(),
+            tab_id: "tab_1".into(),
+            name: Some("working".into()),
+            display_agent: None,
+            agent: None,
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            agent_status: AgentStatus::Working,
+            state_change_seq: 1,
+            state_labels: Vec::new(),
+            tokens: Vec::new(),
+            focused: true,
+        },
+        ClientShellAgent {
+            pane_id: "pane_2".into(),
+            workspace_id: "ws_1".into(),
+            tab_id: "tab_1".into(),
+            name: Some("blocked".into()),
+            display_agent: None,
+            agent: None,
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            agent_status: AgentStatus::Blocked,
+            state_change_seq: 2,
+            state_labels: Vec::new(),
+            tokens: Vec::new(),
+            focused: false,
+        },
+        ClientShellAgent {
+            pane_id: "pane_3".into(),
+            workspace_id: "ws_1".into(),
+            tab_id: "tab_1".into(),
+            name: Some("idle".into()),
+            display_agent: None,
+            agent: None,
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            agent_status: AgentStatus::Idle,
+            state_change_seq: 3,
+            state_labels: Vec::new(),
+            tokens: Vec::new(),
+            focused: false,
+        },
+    ];
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+
+    let mut next = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::NextAttentionAgent),
+        &mut next,
+    );
+    let [ClientShellAction::Endpoint { request, .. }] = &next.actions[..] else {
+        panic!("next attention agent should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::PaneFocus(target) if target.pane_id == "pane_2"
+    ));
+}
+
+#[test]
 fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
     let mut projected = snapshot();
     let mut second_pane = projected.panes[0].clone();

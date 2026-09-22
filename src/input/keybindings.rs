@@ -32,6 +32,8 @@ pub(crate) enum KeybindAction {
     NextWorkspace,
     PreviousAgent,
     NextAgent,
+    PreviousAttentionAgent,
+    NextAttentionAgent,
     NewTab,
     RenameTab,
     PreviousTab,
@@ -63,10 +65,13 @@ pub(crate) enum KeybindAction {
     CyclePaneNext,
     CyclePanePrevious,
     LastPane,
+    LastTab,
+    LastWorkspace,
     Help,
     Settings,
     ReloadConfig,
     OpenNotificationTarget,
+    NextAttentionTarget,
     Detach,
     OpenNavigator,
 }
@@ -111,6 +116,14 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.next_workspace, KeybindAction::NextWorkspace),
         (&keybinds.previous_agent, KeybindAction::PreviousAgent),
         (&keybinds.next_agent, KeybindAction::NextAgent),
+        (
+            &keybinds.previous_attention_agent,
+            KeybindAction::PreviousAttentionAgent,
+        ),
+        (
+            &keybinds.next_attention_agent,
+            KeybindAction::NextAttentionAgent,
+        ),
         (&keybinds.new_tab, KeybindAction::NewTab),
         (&keybinds.rename_tab, KeybindAction::RenameTab),
         (&keybinds.previous_tab, KeybindAction::PreviousTab),
@@ -130,6 +143,8 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.swap_pane_up, KeybindAction::SwapPaneUp),
         (&keybinds.swap_pane_right, KeybindAction::SwapPaneRight),
         (&keybinds.last_pane, KeybindAction::LastPane),
+        (&keybinds.last_tab, KeybindAction::LastTab),
+        (&keybinds.last_workspace, KeybindAction::LastWorkspace),
         (&keybinds.cycle_pane_next, KeybindAction::CyclePaneNext),
         (
             &keybinds.cycle_pane_previous,
@@ -149,6 +164,10 @@ pub(crate) fn resolve_non_indexed_action(
         (
             &keybinds.open_notification_target,
             KeybindAction::OpenNotificationTarget,
+        ),
+        (
+            &keybinds.next_attention_target,
+            KeybindAction::NextAttentionTarget,
         ),
         (&keybinds.detach, KeybindAction::Detach),
         (&keybinds.goto, KeybindAction::OpenNavigator),
@@ -293,6 +312,26 @@ mod tests {
         assert!(matches!(
             resolve_prefix_binding(&keybinds, &key),
             Some(KeybindMatch::Action(KeybindAction::Help))
+        ));
+    }
+
+    #[test]
+    fn default_prefix_l_maps_to_last_tab_and_arrows_focus_panes() {
+        let keybinds = Keybinds::default();
+        let last_tab = TerminalKey::new(KeyCode::Char('l'), KeyModifiers::empty());
+        assert!(matches!(
+            resolve_prefix_binding(&keybinds, &last_tab),
+            Some(KeybindMatch::Action(KeybindAction::LastTab))
+        ));
+        let last_workspace = TerminalKey::new(KeyCode::Char('l'), KeyModifiers::SHIFT);
+        assert!(matches!(
+            resolve_prefix_binding(&keybinds, &last_workspace),
+            Some(KeybindMatch::Action(KeybindAction::LastWorkspace))
+        ));
+        let focus_right = TerminalKey::new(KeyCode::Right, KeyModifiers::empty());
+        assert!(matches!(
+            resolve_prefix_binding(&keybinds, &focus_right),
+            Some(KeybindMatch::Action(KeybindAction::FocusPaneRight))
         ));
     }
 }

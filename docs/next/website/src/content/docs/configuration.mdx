@@ -136,7 +136,7 @@ goto = "prefix+g"
 new_tab = "prefix+c"
 next_tab = "prefix+n"
 previous_tab = "prefix+p"
-focus_pane_left = "prefix+h"
+focus_pane_left = "prefix+left"
 navigate_workspace_down = "j"
 navigate_pane_down = "ctrl+j"
 split_horizontal = "prefix+minus"
@@ -160,6 +160,12 @@ resize_pane_down = "ctrl+shift+alt+down"
 resize_pane_up = "ctrl+shift+alt+up"
 resize_pane_right = "ctrl+shift+alt+right"
 ```
+
+`last_pane` switches back to the last focused pane across workspaces and tabs. It is unset by default.
+
+`last_tab` toggles back to the previously visited tab within the active workspace, and `last_workspace` toggles back to the previously visited workspace, both tmux-`last-window`-style. They default to `prefix+l` and `prefix+shift+l`, which is why pane focus/swap moved to `prefix+left/down/up/right` and `prefix+shift+left/down/up/right`.
+
+`previous_attention_agent` / `next_attention_agent` cycle only through agents that are blocked or done, skipping working/idle agents. They are unset by default.
 
 Key strings accept plain keys, modifier combinations such as `ctrl+a`, `shift+n`, `alt+1`, `cmd+k`, and special keys such as `enter`, `tab`, `esc`, `left`, `right`, `up`, and `down`. Named punctuation such as `minus`, `comma`, `ampersand`, `plus`, and `backtick` is also accepted. Plain direct printable keys such as `n` are unsafe because they intercept typing; use `prefix+n` unless you intentionally want a direct binding. The `navigate_workspace_*` and `navigate_pane_*` fields are navigate-mode-only and may use plain keys such as `j` or `k`; they must not use `prefix+`, `esc`, `enter`, `tab`, `shift+tab`, `left`, `right`, or unmodified `1` through `9`. Left and right arrows are permanent aliases for pane-left and pane-right navigation. These navigate-mode shortcuts are independent from general action bindings such as `focus_pane_down = "prefix+j"`; when both use the same key, the navigate-mode shortcut wins while navigate mode is open. Alt, Cmd/Super, and punctuation with modifiers depend on your terminal and tmux settings.
 
@@ -225,7 +231,7 @@ qualified id when action ids are not globally unique:
 
 ```toml
 [[keys.command]]
-key = "prefix+l"
+key = "prefix+alt+l"
 type = "plugin_action"
 command = "example.layout.apply"
 description = "apply layout"
@@ -482,6 +488,8 @@ position = "bottom-right"
 ```
 
 Choose `herdr` for an in-app toast, `terminal` for an outer-terminal notification that also works over SSH, `system` for the local OS notification service, or `off` to disable popups. Herdr suppresses popups for the active tab. Search `ui.toast` in the [Config reference](/docs/config-reference/) for positions, delay behavior, and clipboard feedback settings.
+
+`prefix+tab` jumps to the agent that has waited longest (finished or needs attention), even after the toast disappears. Repeated presses walk the queue in the order the agents pinged. Focusing an agent any other way removes it from the queue. `prefix+o` still opens the visible toast target. Bind `keys.cycle_pane_next` if you want a dedicated pane-cycle shortcut.
 
 On macOS, `system` tries `terminal-notifier` first and falls back to `/usr/bin/osascript` when it is unavailable or fails. The fallback appears as Script Editor in Notification Center and cannot activate the hosting terminal. Install `terminal-notifier` with `brew install terminal-notifier`. For a supported, detected terminal, it can activate the terminal app when you click the notification. Alternatively, choose `terminal` to let a supported outer terminal own the notification.
 
