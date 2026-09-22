@@ -221,6 +221,7 @@ impl ClientShellState {
             // The aggregate agent list belongs to the client, not one endpoint.
             self.agent_scroll = agent_scroll;
         }
+        self.sync_attention_targets_for_endpoint(endpoint_id);
         true
     }
 

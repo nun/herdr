@@ -370,10 +370,6 @@ impl ClientShellState {
             );
             return false;
         }
-        let focused_pane = match &method {
-            crate::api::schema::Method::PaneFocus(target) => Some(target.pane_id.clone()),
-            _ => None,
-        };
         let Some(snapshot) = self.snapshot.as_deref() else {
             return false;
         };
@@ -403,10 +399,6 @@ impl ClientShellState {
                 kind,
             },
         );
-        if let Some(pane_id) = focused_pane {
-            let endpoint_id = self.active_endpoint_id.clone();
-            self.acknowledge_attention_focus(&endpoint_id, &pane_id);
-        }
         outcome.actions.push(ClientShellAction::Endpoint {
             endpoint_id: self.active_endpoint_id.clone(),
             boot_id,

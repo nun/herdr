@@ -219,7 +219,7 @@ impl ClientShellState {
             &target.endpoint_id != endpoint_id
                 || live_panes.iter().any(|pane_id| pane_id == &target.pane_id)
         });
-        if self.outer_focused == Some(false) {
+        if endpoint_id != &self.active_endpoint_id || self.outer_focused == Some(false) {
             return;
         }
         if let Some(pane_id) = focused_pane_id {
@@ -330,7 +330,9 @@ impl ClientShellState {
                 SemanticNotificationKind::NeedsAttention | SemanticNotificationKind::Finished
             ) {
                 if let Some(pane_id) = pending.event.pane_id.as_deref() {
-                    if !self.attention_pane_is_focused(&pending.endpoint_id, pane_id) {
+                    if !(self.attention_pane_is_focused(&pending.endpoint_id, pane_id)
+                        && self.outer_focused != Some(false))
+                    {
                         self.enqueue_attention_target(&pending.endpoint_id, pane_id);
                     }
                 }

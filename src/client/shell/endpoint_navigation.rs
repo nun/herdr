@@ -271,9 +271,6 @@ impl ClientShellState {
             };
             self.push_endpoint_method(method, outcome);
         } else {
-            if let ClientEndpointFocusTarget::Pane(pane_id) = &target {
-                self.acknowledge_attention_focus(&endpoint_id, pane_id);
-            }
             outcome.actions.push(ClientShellAction::ActivateEndpoint {
                 endpoint_id,
                 target: Some(target),
