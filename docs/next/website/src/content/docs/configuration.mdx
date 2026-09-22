@@ -483,6 +483,8 @@ position = "bottom-right"
 
 Choose `herdr` for an in-app toast, `terminal` for an outer-terminal notification that also works over SSH, `system` for the local OS notification service, or `off` to disable popups. Herdr suppresses popups for the active tab. Search `ui.toast` in the [Config reference](/docs/config-reference/) for positions, delay behavior, and clipboard feedback settings.
 
+`prefix+tab` jumps to the agent that has waited longest (finished or needs attention), even after the toast disappears. Repeated presses walk the queue in the order the agents pinged. Focusing an agent any other way removes it from the queue. `prefix+o` still opens the visible toast target. Bind `keys.cycle_pane_next` if you want a dedicated pane-cycle shortcut.
+
 On macOS, `system` tries `terminal-notifier` first and falls back to `/usr/bin/osascript` when it is unavailable or fails. The fallback appears as Script Editor in Notification Center and cannot activate the hosting terminal. Install `terminal-notifier` with `brew install terminal-notifier`. For a supported, detected terminal, it can activate the terminal app when you click the notification. Alternatively, choose `terminal` to let a supported outer terminal own the notification.
 
 ## Sound
