@@ -371,6 +371,8 @@ pub struct KeysConfig {
     pub reload_config: BindingConfig,
     /// Focus the currently visible notification target. Default: "prefix+o".
     pub open_notification_target: BindingConfig,
+    /// Focus the next agent waiting for attention, oldest first. Default: "prefix+tab".
+    pub next_attention_target: BindingConfig,
     /// Select the previous workspace. Unset by default.
     pub previous_workspace: BindingConfig,
     /// Select the next workspace. Unset by default.
@@ -429,7 +431,7 @@ pub struct KeysConfig {
     pub swap_pane_up: BindingConfig,
     /// Swap the focused pane with the pane to the right. Default: "prefix+shift+right".
     pub swap_pane_right: BindingConfig,
-    /// Cycle to the next pane. Default: "prefix+tab".
+    /// Cycle to the next pane. Unset by default; `prefix+tab` is used by `next_attention_target`.
     pub cycle_pane_next: BindingConfig,
     /// Cycle to the previous pane. Default: "prefix+shift+tab".
     pub cycle_pane_previous: BindingConfig,
@@ -512,6 +514,8 @@ pub(crate) struct KeysConfigOverlay {
     reload_config: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     open_notification_target: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_attention_target: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     previous_workspace: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -647,6 +651,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(detach);
         apply_field!(reload_config);
         apply_field!(open_notification_target);
+        apply_field!(next_attention_target);
         apply_field!(previous_workspace);
         apply_field!(next_workspace);
         apply_field!(previous_agent);
@@ -755,6 +760,7 @@ impl KeysConfig {
         copy_effective_action_field!(detach, keybinds.detach);
         copy_effective_action_field!(reload_config, keybinds.reload_config);
         copy_effective_action_field!(open_notification_target, keybinds.open_notification_target);
+        copy_effective_action_field!(next_attention_target, keybinds.next_attention_target);
         copy_effective_action_field!(previous_workspace, keybinds.previous_workspace);
         copy_effective_action_field!(next_workspace, keybinds.next_workspace);
         copy_effective_action_field!(previous_agent, keybinds.previous_agent);
@@ -870,6 +876,60 @@ pub enum TabBarPositionConfig {
     Bottom,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaneBordersConfig {
+    #[default]
+    Auto,
+    Always,
+    Off,
+}
+
+impl PaneBordersConfig {
+    pub fn draws_borders(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    pub fn shows_borders(self, multi_pane: bool) -> bool {
+        self.draws_borders() && (multi_pane || matches!(self, Self::Always))
+    }
+}
+
+impl<'de> Deserialize<'de> for PaneBordersConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct PaneBordersVisitor;
+
+        impl<'de> de::Visitor<'de> for PaneBordersVisitor {
+            type Value = PaneBordersConfig;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("\"auto\", \"always\", \"off\", or a legacy boolean")
+            }
+
+            fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(if value {
+                    PaneBordersConfig::Auto
+                } else {
+                    PaneBordersConfig::Off
+                })
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                match value {
+                    "auto" => Ok(PaneBordersConfig::Auto),
+                    "always" => Ok(PaneBordersConfig::Always),
+                    "off" => Ok(PaneBordersConfig::Off),
+                    other => Err(E::invalid_value(de::Unexpected::Str(other), &self)),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(PaneBordersVisitor)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct UiConfig {
@@ -902,8 +962,12 @@ pub struct UiConfig {
     pub prompt_new_tab_name: bool,
     /// Ask for a workspace name before interactive creation. Default: false.
     pub prompt_new_workspace_name: bool,
-    /// Draw borders around split panes. Default: true.
-    pub pane_borders: bool,
+    /// Draw borders around split panes. auto draws them only for split panes,
+    /// always also frames a lone pane (only while pane_outer_borders is
+    /// enabled, since every edge of a lone pane is an outer edge), off
+    /// disables them. Legacy booleans map true to auto and false to off.
+    /// Default: auto.
+    pub pane_borders: PaneBordersConfig,
     /// Draw borders along the outside edge of the pane area. Default: true.
     pub pane_outer_borders: bool,
     /// Draw interactive scrollbars beside terminal panes. Default: true.
@@ -1028,7 +1092,7 @@ pub struct ExperimentalConfig {
     /// if the list contains no valid names, the reveal does not apply.
     /// Accepted names: pi, claude, codex, gemini, cursor, devin, cline,
     /// opencode, copilot, kimi, kiro, droid, amp, grok, hermes, kilo,
-    /// qodercli, qoder, qwen, qwen-code, maki.
+    /// qodercli, qoder, qwen, qwen-code, letta, letta-code, maki.
     /// Default: empty.
     pub cjk_ime_agents: Vec<String>,
     /// Cursor shape rendered for the IME anchor when
@@ -1069,6 +1133,7 @@ impl Default for KeysConfig {
             detach: BindingConfig::one("prefix+q"),
             reload_config: BindingConfig::one("prefix+shift+r"),
             open_notification_target: BindingConfig::one("prefix+o"),
+            next_attention_target: BindingConfig::one("prefix+tab"),
             previous_workspace: BindingConfig::empty(),
             next_workspace: BindingConfig::empty(),
             previous_agent: BindingConfig::empty(),
@@ -1097,7 +1162,7 @@ impl Default for KeysConfig {
             swap_pane_down: BindingConfig::one("prefix+shift+down"),
             swap_pane_up: BindingConfig::one("prefix+shift+up"),
             swap_pane_right: BindingConfig::one("prefix+shift+right"),
-            cycle_pane_next: BindingConfig::one("prefix+tab"),
+            cycle_pane_next: BindingConfig::empty(),
             cycle_pane_previous: BindingConfig::one("prefix+shift+tab"),
             last_pane: BindingConfig::empty(),
             last_tab: BindingConfig::one("prefix+l"),
@@ -1145,7 +1210,7 @@ impl Default for UiConfig {
             confirm_close: true,
             prompt_new_tab_name: true,
             prompt_new_workspace_name: false,
-            pane_borders: true,
+            pane_borders: PaneBordersConfig::Auto,
             pane_outer_borders: true,
             pane_scrollbars: true,
             pane_gaps: true,
@@ -1420,9 +1485,34 @@ status_indicators = "symbols"
     }
 
     #[test]
+    fn pane_borders_legacy_booleans_map_to_modes() {
+        let enabled: Config = toml::from_str("[ui]\npane_borders = true").unwrap();
+        assert_eq!(enabled.ui.pane_borders, PaneBordersConfig::Auto);
+
+        let disabled: Config = toml::from_str("[ui]\npane_borders = false").unwrap();
+        assert_eq!(disabled.ui.pane_borders, PaneBordersConfig::Off);
+
+        let auto: Config = toml::from_str("[ui]\npane_borders = \"auto\"").unwrap();
+        assert_eq!(auto.ui.pane_borders, PaneBordersConfig::Auto);
+
+        let off: Config = toml::from_str("[ui]\npane_borders = \"off\"").unwrap();
+        assert_eq!(off.ui.pane_borders, PaneBordersConfig::Off);
+
+        let unknown = toml::from_str::<Config>("[ui]\npane_borders = \"framed\"")
+            .unwrap_err()
+            .to_string();
+        assert!(unknown.contains("\"auto\", \"always\", \"off\", or a legacy boolean"));
+
+        let wrong_type = toml::from_str::<Config>("[ui]\npane_borders = 3")
+            .unwrap_err()
+            .to_string();
+        assert!(wrong_type.contains("\"auto\", \"always\", \"off\", or a legacy boolean"));
+    }
+
+    #[test]
     fn pane_appearance_defaults_and_parse() {
         let default_config = Config::default();
-        assert!(default_config.ui.pane_borders);
+        assert_eq!(default_config.ui.pane_borders, PaneBordersConfig::Auto);
         assert!(default_config.ui.pane_outer_borders);
         assert!(default_config.ui.pane_scrollbars);
         assert!(default_config.ui.pane_gaps);
@@ -1437,7 +1527,7 @@ status_indicators = "symbols"
 
         let toml = r#"
 [ui]
-pane_borders = false
+pane_borders = "always"
 pane_outer_borders = false
 pane_scrollbars = false
 pane_gaps = true
@@ -1454,7 +1544,7 @@ tab_bar_right = [
 tab_bar_right_separator = " · "
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert!(!config.ui.pane_borders);
+        assert_eq!(config.ui.pane_borders, PaneBordersConfig::Always);
         assert!(!config.ui.pane_outer_borders);
         assert!(!config.ui.pane_scrollbars);
         assert!(config.ui.pane_gaps);

@@ -2419,15 +2419,25 @@ mod tests {
             ),
         );
 
-        let response = app.handle_pane_selection_read(
-            "req".into(),
-            PaneSelectionReadParams {
-                pane_id: public_pane_id.clone(),
-                anchor: crate::api::schema::PaneTextPoint { row: 0, col: 0 },
-                cursor: crate::api::schema::PaneTextPoint { row: 0, col: 4 },
-                content_revision: None,
-            },
+        let runtime = app
+            .state
+            .runtime_for_pane_in_workspace(&app.terminal_runtimes, 0, pane_id)
+            .unwrap();
+        let revision = runtime.content_seq();
+        runtime.test_process_pty_bytes(b"\r\nagent is still working");
+        assert_ne!(runtime.content_seq(), revision);
+        let mut params = PaneSelectionReadParams {
+            pane_id: public_pane_id.clone(),
+            anchor: crate::api::schema::PaneTextPoint { row: 0, col: 0 },
+            cursor: crate::api::schema::PaneTextPoint { row: 0, col: 4 },
+            content_revision: Some(revision),
+        };
+        assert_eq!(
+            app.pane_selection_text(&params).unwrap_err().0,
+            "stale_content"
         );
+        params.content_revision = None;
+        let response = app.handle_pane_selection_read("req".into(), params);
 
         let success: SuccessResponse = serde_json::from_str(&response).unwrap();
         assert_eq!(
@@ -2682,6 +2692,35 @@ mod tests {
         assert_eq!(rx.try_recv().unwrap(), bytes::Bytes::from(vec![0x03]));
         assert_eq!(rx.try_recv().unwrap(), bytes::Bytes::from(vec![0x03]));
         assert_eq!(rx.try_recv().unwrap(), bytes::Bytes::from(vec![0x03]));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn api_pane_send_keys_preserves_super_chord_in_legacy_pane() {
+        let (mut app, pane_id, mut rx) = app_with_send_key_runtime(1);
+        let internal_pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        assert_eq!(
+            app.lookup_runtime_sender(0, internal_pane_id)
+                .unwrap()
+                .keyboard_protocol(),
+            crate::input::KeyboardProtocol::Legacy
+        );
+
+        let response = app.handle_api_request(crate::api::schema::Request {
+            id: "req".into(),
+            method: crate::api::schema::Method::PaneSendKeys(PaneSendKeysParams {
+                pane_id,
+                keys: vec!["cmd+c".into()],
+            }),
+        });
+
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(success.id, "req");
+        assert_eq!(success.result, ResponseResult::Ok {});
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            bytes::Bytes::from_static(b"\x1b[99;9u")
+        );
         assert!(rx.try_recv().is_err());
     }
 

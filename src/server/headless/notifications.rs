@@ -618,7 +618,8 @@ impl HeadlessServer {
                 let changed = self.app.handle_internal_event_with_render_impact(ev);
                 let api_focus_succeeded = super::client_views::forward_proxied_api_response(
                     focused_worktree_response.take(),
-                );
+                )
+                .is_some();
                 self.reconcile_client_shell_locations();
                 if shell_navigation_pending {
                     self.app.accept_current_focus_without_events();
@@ -663,7 +664,7 @@ impl HeadlessServer {
                 }
                 true
             }
-            AppEvent::PaneDied { pane_id }
+            AppEvent::PaneDied { pane_id, .. }
             | AppEvent::WorktreeRuntimeRestoreFailed { pane_id, .. } => {
                 let focus_before = self.shell_focus_targets();
                 let focused_tabs_before = self.focused_shell_tabs();

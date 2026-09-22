@@ -1689,6 +1689,18 @@
           ],
           "type": "object"
         },
+        "ClientShellSurfaceSetParams": {
+          "description": "Updates whether the requesting client shell receives and controls pane presentation.",
+          "properties": {
+            "active": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "active"
+          ],
+          "type": "object"
+        },
         "ClientWindowTitleSetParams": {
           "properties": {
             "title": {
@@ -4930,6 +4942,22 @@
         {
           "properties": {
             "method": {
+              "const": "client_shell.surface.set",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ClientShellSurfaceSetParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "session.snapshot",
               "type": "string"
             },
@@ -5827,6 +5855,22 @@
           "properties": {
             "method": {
               "const": "pane.link.activate",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneLinkActivateParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.link.resolve",
               "type": "string"
             },
             "params": {
@@ -8134,6 +8178,35 @@
           ],
           "type": "object"
         },
+        "PaneLinkRegion": {
+          "description": "Inclusive display-cell columns on a pane's current viewport.",
+          "properties": {
+            "end_col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "row": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start_col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "row",
+            "start_col",
+            "end_col"
+          ],
+          "type": "object"
+        },
         "PaneMoveReason": {
           "enum": [
             "same_tab",
@@ -10348,6 +10421,25 @@
             },
             {
               "properties": {
+                "regions": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/PaneLinkRegion"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "pane_link_resolved",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "regions"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
                 "handled": {
                   "type": "boolean"
                 },
@@ -10459,6 +10551,29 @@
               "type": "object"
             },
             {
+              "description": "Acknowledgement for the client-shell surface interest lease. This method is new on the\nendpoint protocol, so its revision-bearing result can establish an activation floor.",
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "projection_revision": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "client_shell_surface_set",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "active",
+                "projection_revision"
+              ],
+              "type": "object"
+            },
+            {
               "properties": {
                 "type": {
                   "const": "ok",
@@ -10487,7 +10602,17 @@
                 "null"
               ]
             },
+            "health_check": {
+              "default": false,
+              "description": "Whether this server supports endpoint health probes.",
+              "type": "boolean"
+            },
             "live_handoff": {
+              "type": "boolean"
+            },
+            "surface_interest": {
+              "default": false,
+              "description": "Whether this server supports explicit client-shell surface interest.",
               "type": "boolean"
             }
           },

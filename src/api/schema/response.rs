@@ -274,6 +274,9 @@ pub enum ResponseResult {
         context: PluginInvocationContext,
         log: PluginCommandLogInfo,
     },
+    PaneLinkResolved {
+        regions: Vec<super::panes::PaneLinkRegion>,
+    },
     PaneLinkActivated {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         url: Option<String>,
@@ -294,6 +297,12 @@ pub enum ResponseResult {
     ConfigReload {
         status: crate::config::ConfigReloadStatus,
         diagnostics: Vec<String>,
+    },
+    /// Acknowledgement for the client-shell surface interest lease. This method is new on the
+    /// endpoint protocol, so its revision-bearing result can establish an activation floor.
+    ClientShellSurfaceSet {
+        active: bool,
+        projection_revision: u64,
     },
     Ok {},
 }

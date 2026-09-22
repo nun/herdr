@@ -102,6 +102,29 @@ fn windows_virtual_terminal_input_mode_sets_only_vti_bit() {
     assert_eq!(windows_virtual_terminal_input_mode(0x03f0), 0x03f0);
 }
 
+#[test]
+fn windows_win32_input_mode_defaults_to_win32_and_honors_probe() {
+    let _guard = env_lock().lock().unwrap();
+    let _removed =
+        EnvVarsRemovedGuard::new(&["HERDR_WINDOWS_INPUT_PROBE", "SSH_CONNECTION", "SSH_TTY"]);
+
+    assert!(windows_win32_input_mode_enabled());
+    {
+        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "1 2 3 4");
+        assert!(windows_win32_input_mode_enabled());
+        let _probe = EnvVarGuard::set("HERDR_WINDOWS_INPUT_PROBE", "WiN32");
+        assert!(windows_win32_input_mode_enabled());
+    }
+    {
+        let _ssh = EnvVarGuard::set("SSH_TTY", "terminal");
+        assert!(windows_win32_input_mode_enabled());
+        let _probe = EnvVarGuard::set("HERDR_WINDOWS_INPUT_PROBE", "vT");
+        assert!(!windows_win32_input_mode_enabled());
+    }
+    let _probe = EnvVarGuard::set("HERDR_WINDOWS_INPUT_PROBE", "win32");
+    assert!(windows_win32_input_mode_enabled());
+}
+
 struct EnvVarsRemovedGuard {
     previous: Vec<(&'static str, Option<OsString>)>,
 }
@@ -156,6 +179,26 @@ fn host_cursor_policy_native_and_drawn_override_auto_detection() {
     ));
 }
 
+#[test]
+fn image_bridge_follows_the_selected_remote_endpoint() {
+    let remote = crate::client::endpoint::ClientEndpointId::Ssh(
+        crate::client::endpoint::ProfileId::parse("0123456789abcdef0123456789abcdef").unwrap(),
+    );
+
+    assert!(endpoint_accepts_local_images(false, &remote, true));
+    assert!(endpoint_accepts_local_images(
+        true,
+        &crate::client::endpoint::ClientEndpointId::Local,
+        true,
+    ));
+    assert!(!endpoint_accepts_local_images(
+        false,
+        &crate::client::endpoint::ClientEndpointId::Local,
+        true,
+    ));
+    assert!(!endpoint_accepts_local_images(false, &remote, false));
+}
+
 #[cfg(unix)]
 #[test]
 fn clipboard_image_paste_bridge_triggers_on_configured_key_and_empty_paste() {
@@ -181,6 +224,11 @@ fn clipboard_image_paste_bridge_triggers_on_configured_key_and_empty_paste() {
         Some(ctrl_v)
     ));
     assert!(!should_bridge_clipboard_image_paste(
+        &[0x16],
+        false,
+        Some(ctrl_v)
+    ));
+    assert!(!should_bridge_clipboard_image_paste(
         b"\x1b[200~text\x1b[201~",
         true,
         Some(ctrl_v)
@@ -193,10 +241,12 @@ fn clipboard_image_paste_bridge_triggers_on_configured_key_and_empty_paste() {
     ));
 }
 
+#[cfg(unix)]
 struct TempImageFile {
     path: std::path::PathBuf,
 }
 
+#[cfg(unix)]
 impl TempImageFile {
     fn new(extension: &str, bytes: &[u8]) -> Self {
         Self::with_name_fragment("test", extension, bytes)
@@ -216,6 +266,7 @@ impl TempImageFile {
     }
 }
 
+#[cfg(unix)]
 impl Drop for TempImageFile {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
@@ -842,12 +893,8 @@ fn terminal_control_scroll_command_maps_to_attach_scroll() {
 
 #[test]
 fn forward_clipboard_uses_local_clipboard_path() {
-    unsafe {
-        std::env::set_var("SSH_CONNECTION", "1 2 3 4");
-    }
+    let _guard = env_lock().lock().unwrap();
+    let _ssh = EnvVarGuard::set("SSH_CONNECTION", "1 2 3 4");
     assert!(forward_clipboard("dGVzdA=="));
     assert!(!forward_clipboard("not base64"));
-    unsafe {
-        std::env::remove_var("SSH_CONNECTION");
-    }
 }

@@ -698,8 +698,7 @@ fn install_downloaded_update(mut update: DownloadedUpdate) -> Result<(), String>
     Ok(())
 }
 
-#[cfg(windows)]
-const WINDOWS_INSTALLER: &str = include_str!("../distribution/install.ps1");
+pub(crate) const WINDOWS_INSTALLER: &str = include_str!("../distribution/install.ps1");
 
 #[cfg(windows)]
 struct DownloadedWindowsUpdate {
@@ -2188,7 +2187,7 @@ pub fn self_update(options: SelfUpdateOptions) -> Result<Version, String> {
         eprintln!("installed {}", release.label());
         print_outdated_integration_notice_with_updated_binary(&updated_exe);
         eprintln!(
-            "Start Herdr again to use the updated client. Running servers remain active; restart them later only if you need server-side changes from {}.",
+            "Open a new terminal, or reconnect SSH, then start Herdr again to use the updated client. Running servers remain active; restart them later only if you need server-side changes from {}.",
             release.label()
         );
     }
@@ -2852,6 +2851,8 @@ mod tests {
                 endpoint_protocol_generation: Some(
                     crate::protocol::endpoint::ENDPOINT_PROTOCOL_GENERATION,
                 ),
+                surface_interest: true,
+                health_check: true,
             }),
         };
         let missing_baseline = crate::api::RuntimeStatus {
@@ -2924,6 +2925,8 @@ mod tests {
                     endpoint_protocol_generation: Some(
                         crate::protocol::endpoint::ENDPOINT_PROTOCOL_GENERATION,
                     ),
+                    surface_interest: true,
+                    health_check: true,
                 }),
             },
         };
@@ -3180,6 +3183,8 @@ mod tests {
                     endpoint_protocol_generation: Some(
                         crate::protocol::endpoint::ENDPOINT_PROTOCOL_GENERATION,
                     ),
+                    surface_interest: true,
+                    health_check: true,
                 }),
             },
         };

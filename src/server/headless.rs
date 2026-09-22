@@ -73,11 +73,13 @@ use crate::server::terminal_attach::paste_payload_for_runtime;
 
 mod bootstrap;
 mod client_views;
+mod endpoint_requests;
 mod lifecycle;
 mod notifications;
 mod pane_graphics;
 mod render;
 mod retained_surface;
+mod surface_interest;
 
 pub use bootstrap::run_server;
 use lifecycle::wait_for_live_handoff_response_write;
@@ -719,7 +721,7 @@ impl HeadlessServer {
 
         // Save session on exit.
         if self.app.policy.persist_session {
-            self.app.save_session_now();
+            self.app.save_session_on_shutdown();
         }
 
         info!("headless server exiting");
@@ -777,7 +779,7 @@ impl HeadlessServer {
         // rendering semantics. Force one fresh frame to every remaining client
         // even if the next rendered buffer compares equal to its cached frame.
         for client in self.clients.values_mut() {
-            client.request_repaint();
+            client.request_recompute();
         }
         if !start_pending_agent_resumes {
             self.app.pending_agent_resume_deadline = None;
@@ -790,7 +792,7 @@ impl HeadlessServer {
             .start_pending_agent_resumes(self.app.pending_agent_resume_due(now))
         {
             for client in self.clients.values_mut() {
-                client.request_repaint();
+                client.request_recompute();
             }
         }
     }
@@ -910,6 +912,9 @@ impl HeadlessServer {
         let Some(client) = self.clients.get_mut(&client_id) else {
             return false;
         };
+        if !client.shell_surface_active {
+            return false;
+        }
         client.last_activity = stamp;
 
         let changed = self.foreground_client_id != Some(client_id);
@@ -929,13 +934,13 @@ impl HeadlessServer {
     fn app_client_count(&self) -> usize {
         self.clients
             .values()
-            .filter(|client| client.is_shell_client() && client.writer.is_some())
+            .filter(|client| client.is_active_shell_client() && client.writer.is_some())
             .count()
     }
 
     fn client_supports_direct_graphics(&self, client_id: u64) -> bool {
         self.clients.get(&client_id).is_some_and(|client| {
-            client.is_shell_client()
+            client.is_active_shell_client()
                 && client.writer.is_some()
                 && client.direct_graphics
                 && client.pixel_mouse
@@ -992,12 +997,14 @@ impl HeadlessServer {
         let disconnected_focus = self
             .clients
             .get(&client_id)
-            .filter(|client| client.is_shell_client() && client.outer_terminal_focus == Some(true))
+            .filter(|client| {
+                client.is_active_shell_client() && client.outer_terminal_focus == Some(true)
+            })
             .and_then(|_| self.shell_focus_target(client_id));
         let should_release_focus = disconnected_focus.as_ref().is_some_and(|target| {
             !self.clients.iter().any(|(&other_id, client)| {
                 other_id != client_id
-                    && client.is_shell_client()
+                    && client.is_active_shell_client()
                     && client.outer_terminal_focus == Some(true)
                     && self.shell_tab_id_for_client(other_id).as_deref()
                         == Some(target.tab_id.as_str())
@@ -1008,7 +1015,8 @@ impl HeadlessServer {
         self.tab_geometry_controllers
             .retain(|_, controller_id| *controller_id != client_id);
         if let Some(mut removed) = removed {
-            self.release_client_shell_inputs(client_id, &mut removed);
+            let held_inputs = removed.drain_shell_held_inputs();
+            self.release_client_shell_inputs(client_id, held_inputs);
             crate::server::clipboard_image::remove_files(removed.staged_clipboard_files);
             if let ClientConnectionMode::TerminalAttach { terminal_id } = removed.mode {
                 self.terminal_attach_owners.remove(&terminal_id);
@@ -1033,8 +1041,12 @@ impl HeadlessServer {
         }
     }
 
-    fn release_client_shell_inputs(&mut self, client_id: u64, client: &mut ClientConnection) {
-        for held in client.drain_shell_held_inputs() {
+    fn release_client_shell_inputs(
+        &mut self,
+        client_id: u64,
+        held_inputs: Vec<crate::server::clients::ClientShellHeldInput>,
+    ) {
+        for held in held_inputs {
             let result = match held.target {
                 ClientShellInputTarget::Pane(pane_id) => {
                     let Some((workspace_index, runtime_pane_id)) = self.app.parse_pane_id(&pane_id)
@@ -1181,16 +1193,18 @@ impl HeadlessServer {
             protocol::ClientClipboardImageTarget::Pane(pane_id) => {
                 !self.handoff_in_progress
                     && self.app.state.popup_pane.is_none()
-                    && self.clients.get(&client_id).is_some_and(|client| {
-                        matches!(client.mode, ClientConnectionMode::ClientShell)
-                    })
+                    && self
+                        .clients
+                        .get(&client_id)
+                        .is_some_and(ClientConnection::is_active_shell_client)
                     && self.app.parse_pane_id(pane_id).is_some()
             }
             protocol::ClientClipboardImageTarget::Popup(terminal_id) => {
                 !self.handoff_in_progress
-                    && self.clients.get(&client_id).is_some_and(|client| {
-                        matches!(client.mode, ClientConnectionMode::ClientShell)
-                    })
+                    && self
+                        .clients
+                        .get(&client_id)
+                        .is_some_and(ClientConnection::is_active_shell_client)
                     && self
                         .app
                         .state
@@ -1237,9 +1251,10 @@ impl HeadlessServer {
             }
             protocol::ClientClipboardImageTarget::Pane(pane_id) => {
                 if self.handoff_in_progress
-                    || !self.clients.get(&client_id).is_some_and(|client| {
-                        matches!(client.mode, ClientConnectionMode::ClientShell)
-                    })
+                    || !self
+                        .clients
+                        .get(&client_id)
+                        .is_some_and(ClientConnection::is_active_shell_client)
                 {
                     return false;
                 }
@@ -1273,9 +1288,10 @@ impl HeadlessServer {
             }
             protocol::ClientClipboardImageTarget::Popup(terminal_id) => {
                 if self.handoff_in_progress
-                    || !self.clients.get(&client_id).is_some_and(|client| {
-                        matches!(client.mode, ClientConnectionMode::ClientShell)
-                    })
+                    || !self
+                        .clients
+                        .get(&client_id)
+                        .is_some_and(ClientConnection::is_active_shell_client)
                 {
                     return false;
                 }
@@ -1467,11 +1483,17 @@ impl HeadlessServer {
         sources: &HashSet<crate::layout::PaneId>,
     ) -> (bool, bool) {
         let focused_source = self
-            .app
-            .state
-            .active
-            .and_then(|ws_idx| self.app.state.workspaces.get(ws_idx))
-            .and_then(|workspace| workspace.focused_pane_id())
+            .foreground_window_title_target()
+            .or_else(|| self.default_shell_target())
+            .and_then(|target| {
+                self.app
+                    .state
+                    .workspaces
+                    .get(target.workspace_index)?
+                    .tabs
+                    .get(target.tab_index)
+            })
+            .map(|tab| tab.layout.focused())
             .is_some_and(|pane_id| sources.contains(&pane_id));
         let changes = self.app.sync_terminal_titles(sources);
         let outer_title_synced = focused_source && self.app.window_title_uses_terminal_title();
@@ -1484,12 +1506,28 @@ impl HeadlessServer {
         )
     }
 
-    /// Renders `ui.window_title` against current session state. `None` means
+    fn foreground_window_title_target(&self) -> Option<crate::ui::TabSurfaceTarget> {
+        self.foreground_client_id
+            .filter(|client_id| {
+                self.clients
+                    .get(client_id)
+                    .is_some_and(|client| client.is_active_shell_client())
+            })
+            .and_then(|client_id| self.shell_target_for_client(client_id))
+    }
+
+    /// Renders `ui.window_title` against the foreground client view. `None` means
     /// window titles are disabled or every token resolved empty, which leaves
     /// the client on Herdr's default title.
     fn configured_window_title(&self) -> Option<String> {
-        self.app
-            .window_title()
+        self.foreground_window_title_target()
+            .map_or_else(
+                || self.app.window_title(),
+                |target| {
+                    self.app
+                        .window_title_for(target.workspace_index, target.tab_index)
+                },
+            )
             .and_then(|title| crate::config::sanitize_window_title_text(&title))
     }
 
@@ -1929,6 +1967,9 @@ impl HeadlessServer {
                 direct_graphics,
                 endpoint_keybindings,
                 mouse_capture,
+                surface_active,
+                surface_reuse,
+                surface_delta,
                 writer,
             } => {
                 if self.handoff_in_progress {
@@ -1950,6 +1991,7 @@ impl HeadlessServer {
                     rows = surface_rows,
                     cell_width_px,
                     cell_height_px,
+                    surface_active,
                     render_encoding = ?protocol::RenderEncoding::SemanticFrame,
                     "client connected"
                 );
@@ -1972,6 +2014,9 @@ impl HeadlessServer {
                 connection.direct_graphics = direct_graphics;
                 connection.shell_uses_endpoint_keybindings = endpoint_keybindings;
                 connection.shell_mouse_capture = mouse_capture;
+                connection.shell_surface_active = surface_active;
+                connection.render_state.enable_surface_reuse(surface_reuse);
+                connection.render_state.enable_surface_delta(surface_delta);
                 connection.shell_projection_revision = 1;
                 let config_diagnostic = if endpoint_keybindings {
                     self.server_config_diagnostic.as_deref()
@@ -1987,6 +2032,21 @@ impl HeadlessServer {
                 );
                 let location =
                     crate::server::clients::ClientShellLocation::from_snapshot(&seed_snapshot);
+                let agent_view = self.app.state.agent_view_override.clone();
+                let projection_message = match agent_view.as_ref() {
+                    Some(view) => match crate::protocol::endpoint::agent_view_projection_message(
+                        &seed_snapshot.boot_id,
+                        seed_snapshot.revision,
+                        Some(view),
+                    ) {
+                        Ok(message) => Some(message),
+                        Err(err) => {
+                            warn!(client_id, err = %err, "failed to encode endpoint agent view");
+                            return false;
+                        }
+                    },
+                    None => None,
+                };
                 let snapshot_message =
                     match crate::protocol::endpoint::snapshot_message(&seed_snapshot) {
                         Ok(message) => message,
@@ -1997,12 +2057,18 @@ impl HeadlessServer {
                     };
                 connection.shell_location = Some(location);
                 connection.shell_snapshot = Some(seed_snapshot);
+                connection.shell_agent_view = agent_view;
                 self.clients.insert(client_id, connection);
                 if self.app.state.popup_pane.is_some() && self.popup_owner_tab_id.is_none() {
                     self.popup_owner_tab_id = self.shell_tab_id_for_client(client_id);
                 }
+                if let Some(message) = projection_message {
+                    self.send_to_client(client_id, message);
+                }
                 self.send_to_client(client_id, snapshot_message);
-                self.foreground_client_id = Some(client_id);
+                if surface_active {
+                    self.foreground_client_id = Some(client_id);
+                }
                 if first_app_client {
                     self.app.mark_git_status_refresh_due(Instant::now());
                 }
@@ -2224,6 +2290,9 @@ impl HeadlessServer {
                     client.cell_size = observed;
                 }
                 client.pixel_mouse = pixel_mouse && observed.is_known();
+                if !client.shell_surface_active {
+                    return false;
+                }
                 client.request_repaint();
                 self.promote_client_to_foreground(client_id);
                 self.resize_shell_tab_if_controller(client_id, true);
@@ -2239,7 +2308,7 @@ impl HeadlessServer {
                 if !client.update_host_theme(&update) {
                     return false;
                 }
-                if self.foreground_client_id != Some(client_id) {
+                if !client.shell_surface_active || self.foreground_client_id != Some(client_id) {
                     return false;
                 }
                 let mut changed = self.app.set_host_terminal_appearance_state(
@@ -2256,15 +2325,14 @@ impl HeadlessServer {
                 let Some(client) = self.clients.get(&client_id) else {
                     return false;
                 };
-                if !matches!(client.mode, ClientConnectionMode::ClientShell)
-                    || client.outer_terminal_focus == Some(focused)
+                if !client.is_active_shell_client() || client.outer_terminal_focus == Some(focused)
                 {
                     return false;
                 }
                 let tab_id = self.shell_tab_id_for_client(client_id);
                 let another_focused_viewer = self.clients.iter().any(|(&other_id, client)| {
                     other_id != client_id
-                        && client.is_shell_client()
+                        && client.is_active_shell_client()
                         && client.outer_terminal_focus == Some(true)
                         && self.shell_tab_id_for_client(other_id) == tab_id
                 });
@@ -2308,15 +2376,38 @@ impl HeadlessServer {
                 client.host_mouse_capture_active = None;
                 true
             }
+            ServerEvent::ClientShellPresentationSync { client_id, token } => {
+                let Some(client) = self.clients.get_mut(&client_id) else {
+                    return false;
+                };
+                if !client.is_active_shell_client() {
+                    return false;
+                }
+                client.host_mouse_capture_active = None;
+                client.host_sgr_pixels_active = None;
+                client.host_keyboard_report_all_active = None;
+                self.sent_window_title = None;
+                self.stream_host_mouse_capture_mode();
+                self.stream_direct_terminal_keyboard_mode();
+                self.sync_window_title();
+                self.send_to_client(
+                    client_id,
+                    ServerMessage::EndpointControl {
+                        kind: crate::protocol::endpoint::PRESENTATION_EFFECTS_READY_KIND.into(),
+                        data: token,
+                    },
+                )
+            }
             ServerEvent::ClientShellPaneInput {
                 client_id,
                 pane_id,
                 events,
             } => {
                 if self.handoff_in_progress
-                    || !self.clients.get(&client_id).is_some_and(|client| {
-                        matches!(client.mode, ClientConnectionMode::ClientShell)
-                    })
+                    || !self
+                        .clients
+                        .get(&client_id)
+                        .is_some_and(ClientConnection::is_active_shell_client)
                 {
                     return false;
                 }
@@ -2400,9 +2491,10 @@ impl HeadlessServer {
                 events,
             } => {
                 if self.handoff_in_progress
-                    || !self.clients.get(&client_id).is_some_and(|client| {
-                        matches!(client.mode, ClientConnectionMode::ClientShell)
-                    })
+                    || !self
+                        .clients
+                        .get(&client_id)
+                        .is_some_and(ClientConnection::is_active_shell_client)
                 {
                     return false;
                 }
@@ -2494,96 +2586,8 @@ impl HeadlessServer {
             ServerEvent::ClientShellEndpointRequest {
                 client_id,
                 boot_id,
-                mut request,
-            } => {
-                let Some(client) = self.clients.get(&client_id) else {
-                    return false;
-                };
-                if !matches!(client.mode, ClientConnectionMode::ClientShell) {
-                    self.remove_client_and_resize_if_needed(client_id);
-                    return true;
-                }
-                let request_id = request.id.clone();
-                if !crate::server::client_commands::supports_client_shell_method(&request.method) {
-                    let message = crate::server::client_commands::error_message(
-                        boot_id,
-                        request_id,
-                        "unsupported_endpoint_command",
-                        "this method is not available through the client shell command lane",
-                    );
-                    self.send_to_client(client_id, message);
-                    return false;
-                }
-                if boot_id != self.client_shell_boot_id {
-                    let message = crate::server::client_commands::error_message(
-                        boot_id,
-                        request_id,
-                        "stale_boot",
-                        "endpoint command targeted an earlier server boot",
-                    );
-                    self.send_to_client(client_id, message);
-                    return false;
-                }
-                if client.shell_endpoint_command_in_flight {
-                    self.send_to_client(
-                        client_id,
-                        ServerMessage::ServerShutdown {
-                            reason: Some("client sent concurrent endpoint commands".into()),
-                        },
-                    );
-                    self.remove_client_and_resize_if_needed(client_id);
-                    return true;
-                }
-
-                let api_request_id = format!(
-                    "endpoint:{}:{client_id}:{request_id}",
-                    self.client_shell_boot_id
-                );
-                request.id = api_request_id.clone();
-                let (respond_to, response_rx) = std::sync::mpsc::channel();
-                if let Err(err) = crate::server::client_commands::spawn_response_waiter(
-                    client_id,
-                    boot_id.clone(),
-                    request_id.clone(),
-                    response_rx,
-                    self.server_event_tx.clone(),
-                ) {
-                    let message = crate::server::client_commands::error_message(
-                        boot_id,
-                        request_id,
-                        "server_unavailable",
-                        format!("failed to start endpoint response bridge: {err}"),
-                    );
-                    self.send_to_client(client_id, message);
-                    return false;
-                }
-                if let Some(client) = self.clients.get_mut(&client_id) {
-                    client.shell_endpoint_command_in_flight = true;
-                    let deferred_worktree = matches!(
-                        &request.method,
-                        api::schema::Method::WorktreeCreate(_)
-                            | api::schema::Method::WorktreeRemove(_)
-                    );
-                    let deferred_navigation = matches!(
-                        &request.method,
-                        api::schema::Method::WorktreeCreate(params) if params.focus
-                    );
-                    client.shell_deferred_navigation_request_id =
-                        deferred_worktree.then(|| api_request_id.clone());
-                    client.shell_deferred_navigation_response = deferred_navigation.then(Vec::new);
-                }
-                let foreground_changed = self.promote_client_to_foreground(client_id);
-                foreground_changed
-                    | self.handle_client_shell_api_request(
-                        client_id,
-                        api::ApiRequestMessage {
-                            request: *request,
-                            respond_to,
-                            response_write_complete: None,
-                            stream_active: None,
-                        },
-                    )
-            }
+                request,
+            } => self.handle_client_shell_endpoint_request(client_id, boot_id, request),
             ServerEvent::ClientShellEndpointResponseChunkReady {
                 client_id,
                 boot_id,
@@ -2591,14 +2595,16 @@ impl HeadlessServer {
                 final_chunk,
                 data,
             } => {
-                let valid = self.clients.get(&client_id).is_some_and(|client| {
-                    matches!(client.mode, ClientConnectionMode::ClientShell)
+                let command_surface_revision = self.clients.get(&client_id).and_then(|client| {
+                    (matches!(client.mode, ClientConnectionMode::ClientShell)
                         && client.shell_endpoint_command_in_flight
-                        && boot_id == self.client_shell_boot_id
+                        && boot_id == self.client_shell_boot_id)
+                        .then_some(client.shell_endpoint_command_surface_revision)
+                        .flatten()
                 });
-                if !valid {
+                let Some(command_surface_revision) = command_surface_revision else {
                     return false;
-                }
+                };
                 let completed_deferred_response =
                     self.clients.get_mut(&client_id).and_then(|client| {
                         let response = client.shell_deferred_navigation_response.as_mut()?;
@@ -2610,6 +2616,7 @@ impl HeadlessServer {
                 if final_chunk {
                     if let Some(client) = self.clients.get_mut(&client_id) {
                         client.shell_endpoint_command_in_flight = false;
+                        client.shell_endpoint_command_surface_revision = None;
                         client.shell_deferred_navigation_request_id = None;
                     }
                 }
@@ -2618,7 +2625,10 @@ impl HeadlessServer {
                     .and_then(Self::deferred_endpoint_navigation_tab_id);
                 let focus_before = self.shell_focus_target(client_id);
                 let focused_tabs_before = self.focused_shell_tabs();
-                let navigation_changed = deferred_tab_id
+                let navigation_changed = self.clients.get(&client_id).is_some_and(|client| {
+                    client.is_active_shell_client()
+                        && client.shell_projection_revision == command_surface_revision
+                }) && deferred_tab_id
                     .as_deref()
                     .is_some_and(|tab_id| self.focus_shell_client_on_tab(client_id, tab_id));
                 let geometry_changed =

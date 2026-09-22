@@ -290,6 +290,74 @@ fn detection_uses_cached_manifest_until_explicit_reload() {
 }
 
 #[test]
+fn compiled_rules_are_shared_until_manifest_reload() {
+    with_manifest_dirs("shared-compiled-rules", || {
+        write_remote_codex(&format!(
+            "{}\nregex = ['^cached-[a-z]+$']\n",
+            remote_manifest("9999.01.01.1", "blocked", "cached-ready")
+        ));
+        let first = load_manifest(Agent::Codex).unwrap();
+        let second = load_manifest(Agent::Codex).unwrap();
+        assert!(!first.compiled_rules.is_empty());
+        assert_eq!(
+            first.compiled_rules.as_ptr(),
+            second.compiled_rules.as_ptr(),
+            "cached loads must retain the same compiled rules and regex search caches"
+        );
+
+        write_remote_codex_without_reload(&format!(
+            "{}\nregex = ['^new-[a-z]+$']\n",
+            remote_manifest("9999.01.01.2", "working", "new-ready")
+        ));
+        let unchanged = load_manifest(Agent::Codex).unwrap();
+        assert_eq!(
+            first.compiled_rules.as_ptr(),
+            unchanged.compiled_rules.as_ptr()
+        );
+
+        reload_manifests_for_agents(&[Agent::Codex]);
+        let reloaded = load_manifest(Agent::Codex).unwrap();
+        let shared_reload = load_manifest(Agent::Codex).unwrap();
+        assert_ne!(
+            first.compiled_rules.as_ptr(),
+            reloaded.compiled_rules.as_ptr()
+        );
+        assert_eq!(
+            reloaded.compiled_rules.as_ptr(),
+            shared_reload.compiled_rules.as_ptr()
+        );
+        assert!(compiled_rule_matches(
+            &first.compiled_rules[0],
+            "cached-ready"
+        ));
+        assert!(!compiled_rule_matches(
+            &first.compiled_rules[0],
+            "new-ready"
+        ));
+        assert_eq!(
+            explain(Agent::Codex, "new-ready").state,
+            AgentState::Working
+        );
+
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let reloaded = &reloaded;
+                scope.spawn(move || {
+                    let loaded = load_manifest(Agent::Codex).unwrap();
+                    assert_eq!(
+                        loaded.compiled_rules.as_ptr(),
+                        reloaded.compiled_rules.as_ptr()
+                    );
+                    for _ in 0..8 {
+                        assert_eq!(detect(Agent::Codex, "new-ready").state, AgentState::Working);
+                    }
+                });
+            }
+        });
+    });
+}
+
+#[test]
 fn all_bundled_manifests_parse_and_validate() {
     for agent in Agent::SCREEN_MANIFEST_AGENTS {
         assert!(
@@ -739,6 +807,108 @@ fn claude_blocker_with_background_shell_remains_blocked() {
 }
 
 #[test]
+fn claude_bash_prompt_with_dont_ask_again_option_matches_bash_rule() {
+    // Captured from a Bash approval prompt at its resting cursor position. The
+    // "don't ask again" choice pushes No to option 3, so the only cursor-free
+    // option line is one bash_permission_prompt used not to cover, which let
+    // the narrower generic_permission_prompt claim the prompt instead (#2650).
+    let screen = concat!(
+        "────────────────────────────────────────────────────────────────
+",
+        " Bash command
+
+",
+        "   curl -sS -o /tmp/probe.html https://example.com
+",
+        "   Download example.com to /tmp/probe.html
+
+",
+        " This command requires approval
+
+",
+        " Do you want to proceed?
+",
+        " ❯ 1. Yes
+",
+        "   2. Yes, and don't ask again for: curl *
+",
+        "   3. No
+
+",
+        " Esc to cancel · Tab to amend · ctrl+e to explain
+",
+    );
+    let result = osc_explain(Agent::Claude, screen, "", "");
+
+    assert_eq!(result.state, AgentState::Blocked);
+    assert_eq!(
+        result.matched_rule.as_ref().map(|rule| rule.id.as_str()),
+        Some("bash_permission_prompt")
+    );
+    assert!(result.visible_blocker);
+}
+
+#[test]
+fn claude_permission_prompt_matches_at_every_cursor_position() {
+    // The selected option carries "❯", so no option branch may assume its line
+    // is cursor-free. Walk the cursor across both option layouts.
+    let layouts: [&[&str]; 2] = [
+        &[" ❯ 1. Yes", "   2. No"],
+        &[
+            " ❯ 1. Yes",
+            "   2. Yes, and don't ask again for: curl *",
+            "   3. No",
+        ],
+    ];
+
+    for layout in layouts {
+        for selected in 0..layout.len() {
+            let options: Vec<String> = layout
+                .iter()
+                .enumerate()
+                .map(|(index, line)| {
+                    let bare = line.trim_start().trim_start_matches('❯').trim_start();
+                    if index == selected {
+                        format!(" ❯ {bare}")
+                    } else {
+                        format!("   {bare}")
+                    }
+                })
+                .collect();
+            let screen = format!(
+                concat!(
+                    "────────────────────────────────────────────────────────────────
+",
+                    " Bash command
+
+",
+                    "   curl -sS https://example.com
+
+",
+                    " Do you want to proceed?
+",
+                    "{}
+
+",
+                    " Esc to cancel · Tab to amend · ctrl+e to explain
+",
+                ),
+                options.join("\n"),
+            );
+            let result = osc_explain(Agent::Claude, &screen, "", "");
+
+            assert_eq!(
+                result.matched_rule.as_ref().map(|rule| rule.id.as_str()),
+                Some("bash_permission_prompt"),
+                "{options:?} selected={selected}"
+            );
+            assert_eq!(result.state, AgentState::Blocked, "selected={selected}");
+            assert!(result.visible_blocker, "selected={selected}");
+        }
+    }
+}
+
+#[test]
 fn claude_osc_title_braille_prefix_is_working() {
     // "⠂" is U+2802, in the braille block U+2800-U+28FF
     let result = osc_explain(Agent::Claude, "", "⠂ project", "");
@@ -932,6 +1102,47 @@ fn codex_trust_directory_requires_live_top_region() {
 }
 
 #[test]
+fn codex_startup_update_requires_complete_live_chooser() {
+    let chooser = "Update available! 0.153.0 -> 9.8.7\n\
+        Run bun add -g @openai/codex to update.\n\n\
+        › 1. Update now\n\
+          2. Skip until next version\n\n\
+        Press enter to continue   \n";
+    let wrapped = "✨ Update available! 0.153.0\n\n\
+        Release notes: https://example\n\n\
+        › 1. Update now (runs `npm\n\
+             install -g\n\
+             @openai/codex`)\n\
+          2. Skip\n\
+          3. Skip until next\n\
+             version\n\n\
+        Press enter to continue\n";
+
+    for screen in [chooser, wrapped] {
+        let result = osc_explain(Agent::Codex, screen, "project", "");
+        assert_eq!(result.state, AgentState::Blocked);
+        assert_eq!(
+            result.matched_rule.as_ref().map(|rule| rule.id.as_str()),
+            Some("startup_update")
+        );
+        assert!(result.visible_blocker);
+    }
+
+    for screen in [
+        chooser.replace("Update now", "Install"),
+        format!("{wrapped}\n› Ask Codex to do anything\n"),
+    ] {
+        let result = osc_explain(Agent::Codex, &screen, "project", "");
+        assert_eq!(result.state, AgentState::Idle);
+        assert_ne!(
+            result.matched_rule.as_ref().map(|rule| rule.id.as_str()),
+            Some("startup_update")
+        );
+        assert!(!result.visible_blocker);
+    }
+}
+
+#[test]
 fn codex_background_terminal_screen_does_not_override_osc_idle() {
     // Background terminal tasks can be long-lived helpers such as dev servers.
     // They should not make Codex look busy once the foreground turn is idle.
@@ -958,6 +1169,50 @@ fn codex_screen_working_fallback_handles_static_osc_title() {
         result.matched_rule.as_ref().map(|r| r.id.as_str()),
         Some("screen_working_fallback")
     );
+    assert!(result.visible_working);
+}
+
+#[test]
+fn codex_screen_working_fallback_handles_activity_labels_and_queued_inputs() {
+    for prefix in ["", "• ", "◦ "] {
+        for label in ["Working", "Fixing bug in queue region"] {
+            for queue in [
+                "",
+                "\n• Queued follow-up inputs\n  ↳ Follow up after this turn\n    alt + ↑ edit last queued message\n",
+                "\n• Messages to be submitted after next tool call\n  (press esc to interrupt and send immediately)\n  ↳ Keep waiting until the sleep finishes.\n",
+                "\n• Messages to be submitted after next tool call (press esc to interrupt and send immediately)\n  ↳ Keep waiting until the sleep finishes.\n",
+                "\n• Messages to be submitted after next tool call (press esc to interrupt\n  and send immediately)\n  ↳ Keep waiting until the sleep finishes.\n",
+                "\n• Messages to be submitted after next\n  tool call (press esc to interrupt and\n  send immediately)\n  ↳ Keep waiting until the sleep finishes.\n",
+                "\n• Messages to be submitted at end of turn\n  ↳ Follow up after this turn\n",
+                "\n• Messages to be submitted after next tool call\n  (press esc to interrupt and send immediately)\n  ↳ Keep waiting until the sleep finishes.\n\n• Queued follow-up inputs\n  ↳ After this turn reply ok.\n    alt + ↑ edit last queued message\n",
+            ] {
+                let screen = format!(
+                    "{prefix}{label} (1m 16s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close\n\
+                     {queue}\n› Ask Codex to do anything\n\n  model · /work\n"
+                );
+                let result = osc_explain(Agent::Codex, &screen, "project", "");
+
+                assert_eq!(result.state, AgentState::Working, "{screen}");
+                assert_eq!(
+                    result.matched_rule.as_ref().map(|rule| rule.id.as_str()),
+                    Some("screen_working_fallback"),
+                    "{screen}"
+                );
+                assert!(result.visible_working);
+            }
+        }
+    }
+}
+
+#[test]
+fn codex_screen_working_fallback_uses_latest_activity_after_interruption() {
+    let screen = "■ Conversation interrupted\n\n\
+        › Try again\n\n\
+        Working (4s • esc to interrupt)\n\n\
+        › Ask Codex to do anything\n\n  model · /work\n";
+    let result = osc_explain(Agent::Codex, screen, "project", "");
+
+    assert_eq!(result.state, AgentState::Working);
     assert!(result.visible_working);
 }
 
@@ -1052,6 +1307,46 @@ fn codex_weak_blocker_ignores_wrapped_current_prompt_text() {
 }
 
 #[test]
+fn codex_sparkle_prompt_preserves_live_states() {
+    for marker in ["› ", "›⠁", "›⠂", "›⠄", "›⠈", "›⠐", "›⠠", "›⡀", "›⢀"]
+    {
+        let screen = format!("Do you want to proceed? [y/n]\n{marker}unsent draft\n");
+        let result = osc_explain(Agent::Codex, &screen, "project | Ready", "");
+        assert_eq!(result.state, AgentState::Idle, "{marker}");
+
+        let working = format!(
+            "Do you want to proceed? [y/n]\n• Working (4s • esc to interrupt)\n{marker}draft\n"
+        );
+        let result = osc_explain(Agent::Codex, &working, "project", "");
+        assert_eq!(result.state, AgentState::Working, "{marker}");
+
+        let approval = format!("{screen}Press enter to confirm or esc to cancel\n");
+        let result = osc_explain(Agent::Codex, &approval, "project", "");
+        assert_eq!(result.state, AgentState::Blocked, "{marker}");
+        assert!(result.visible_blocker);
+
+        for response_marker in ['•', '■', '✗', '✓'] {
+            let response = format!("{screen}{response_marker} Do you want to proceed? [y/n]\n");
+            let result = osc_explain(Agent::Codex, &response, "project", "");
+            assert_eq!(
+                result.state,
+                AgentState::Blocked,
+                "{marker} {response_marker}"
+            );
+        }
+    }
+}
+
+#[test]
+fn codex_weak_blocker_does_not_ignore_arbitrary_prompt_suffixes() {
+    for line in ["›text", "›⠋draft", "›⠀draft", " ›⠁draft", "quoted ›⠁draft"] {
+        let screen = format!("Do you want to proceed? [y/n]\n{line}\n");
+        let result = osc_explain(Agent::Codex, &screen, "project", "");
+        assert_eq!(result.state, AgentState::Blocked, "{line}");
+    }
+}
+
+#[test]
 fn codex_transcript_viewer_outranks_working_fallback() {
     let screen = "• Working (4s • esc to interrupt)\n\
         › transcript\n\
@@ -1079,6 +1374,19 @@ fn codex_screen_working_fallback_ignores_stale_and_prompt_text() {
         "  ◦ Working (1m 16s • esc to interrupt)\n\
          › Use /skills to list available skills\n\
          gpt-5.6-sol default · /work\n",
+        "Working (1m 16s • esc to interrupt)\n\
+         • Finished the task\n\
+         › Ask Codex to do anything\n",
+        "Working (1m 16s • esc to interrupt)\n\
+         ■ Conversation interrupted\n\
+         › Ask Codex to do anything\n",
+        "Working (1m 16s • esc to interrupt)\n\
+         ─ Worked for 1m 16s ─\n\
+         › Ask Codex to do anything\n",
+        "Working (1m 16s • esc to interrupt)\n•\nMessages to be submitted after next tool call\n› Ask Codex to do anything\n",
+        "› Explain this status:\n  Working (1m 16s • esc to interrupt)\n",
+        "• Example (press esc to interrupt)\n\
+         › Ask Codex to do anything\n",
     ];
 
     for screen in screens {
