@@ -608,6 +608,7 @@ impl ClientShellState {
                 endpoint.agent_view_projection = None;
             }
         }
+        self.sync_attention_targets_for_endpoint(endpoint_id);
     }
 
     pub(crate) fn acknowledge_active_surface_agents(&mut self, surface: &PaneSurfaceFrame) -> bool {

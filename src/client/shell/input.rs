@@ -238,6 +238,10 @@ impl ClientShellState {
                 RawInputEvent::Mouse(mouse) => self.handle_mouse(mouse, &mut outcome),
                 RawInputEvent::OuterFocusGained => {
                     self.outer_focused = Some(true);
+                    if let Some(pane_id) = self.focused_pane_id() {
+                        let endpoint_id = self.active_endpoint_id.clone();
+                        self.acknowledge_attention_focus(&endpoint_id, &pane_id);
+                    }
                     outcome.query_host_appearance = true;
                     outcome.repaint |= self.config.redraw_on_focus_gained;
                     if let Some(surface) = self.pane_surface.clone() {

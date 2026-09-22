@@ -728,6 +728,12 @@ pub(super) struct ClientVisibleNotification {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct AttentionJumpTarget {
+    pub(super) endpoint_id: ClientEndpointId,
+    pub(super) pane_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ClientInputTarget {
     Pane(String),
     Popup(String),
@@ -912,6 +918,7 @@ pub(crate) struct ClientShellState {
     pub(super) pending_notifications: Vec<ClientPendingNotification>,
     pub(super) visible_notification: Option<ClientVisibleNotification>,
     pub(super) queued_notifications: VecDeque<ClientVisibleNotification>,
+    pub(super) attention_targets: VecDeque<AttentionJumpTarget>,
     pub(super) endpoint_notice_seen: HashSet<ClientEndpointNoticeKey>,
     pub(super) visible_endpoint_notice: Option<ClientVisibleEndpointNotice>,
     pub(super) outer_focused: Option<bool>,
@@ -1074,6 +1081,7 @@ impl ClientShellState {
             pending_notifications: Vec::new(),
             visible_notification: None,
             queued_notifications: VecDeque::new(),
+            attention_targets: VecDeque::new(),
             endpoint_notice_seen: HashSet::new(),
             visible_endpoint_notice: None,
             outer_focused: None,

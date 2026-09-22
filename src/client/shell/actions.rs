@@ -66,6 +66,10 @@ impl ClientShellState {
                     self.focus_visible_notification(outcome);
                     return;
                 }
+                if action == crate::input::KeybindAction::NextAttentionTarget {
+                    self.focus_next_attention_target(outcome);
+                    return;
+                }
                 if action == crate::input::KeybindAction::ReloadConfig {
                     self.push_endpoint_method_with_kind(
                         crate::api::schema::Method::ServerReloadConfig(
@@ -366,6 +370,10 @@ impl ClientShellState {
             );
             return false;
         }
+        let focused_pane = match &method {
+            crate::api::schema::Method::PaneFocus(target) => Some(target.pane_id.clone()),
+            _ => None,
+        };
         let Some(snapshot) = self.snapshot.as_deref() else {
             return false;
         };
@@ -382,21 +390,26 @@ impl ClientShellState {
                 .map(|pane| pane.workspace_id.clone()),
             _ => None,
         };
+        let boot_id = snapshot.boot_id.clone();
         let request_id = self.next_request_id;
         self.next_request_id = self.next_request_id.saturating_add(1);
         let request_id = format!("client-shell:{request_id}");
         self.pending_requests.insert(
             request_id.clone(),
             PendingEndpointRequest {
-                boot_id: snapshot.boot_id.clone(),
+                boot_id: boot_id.clone(),
                 method_name,
                 confirmation_workspace_id,
                 kind,
             },
         );
+        if let Some(pane_id) = focused_pane {
+            let endpoint_id = self.active_endpoint_id.clone();
+            self.acknowledge_attention_focus(&endpoint_id, &pane_id);
+        }
         outcome.actions.push(ClientShellAction::Endpoint {
             endpoint_id: self.active_endpoint_id.clone(),
-            boot_id: snapshot.boot_id.clone(),
+            boot_id,
             request: Box::new(crate::api::schema::Request {
                 id: request_id,
                 method,
