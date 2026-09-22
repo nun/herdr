@@ -78,6 +78,10 @@ pub(crate) fn keybind_help_groups(
                     binding_label(&keybinds.open_notification_target),
                     "open notification target",
                 ),
+                entry(
+                    binding_label(&keybinds.next_attention_target),
+                    "next agent needing attention",
+                ),
             ],
         ),
         (

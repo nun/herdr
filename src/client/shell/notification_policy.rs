@@ -1,6 +1,7 @@
 use super::*;
 
 const MAX_QUEUED_NOTIFICATIONS: usize = 8;
+const MAX_ATTENTION_TARGETS: usize = 32;
 const COMPLETION_EVIDENCE_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
 pub(super) const COMPLETION_RECHECK_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(50);
@@ -27,6 +28,8 @@ impl ClientShellState {
             .retain(|pending| &pending.endpoint_id != endpoint_id);
         self.queued_notifications
             .retain(|queued| &queued.endpoint_id != endpoint_id);
+        self.attention_targets
+            .retain(|target| &target.endpoint_id != endpoint_id);
         if self
             .visible_notification
             .as_ref()
@@ -83,16 +86,144 @@ impl ClientShellState {
         let Some(pane_id) = notification.event.pane_id else {
             return;
         };
-        if notification.endpoint_id == self.active_endpoint_id {
+        self.dequeue_attention_target(&notification.endpoint_id, &pane_id);
+        self.focus_attention_pane(&notification.endpoint_id, pane_id, outcome);
+    }
+
+    pub(super) fn focus_next_attention_target(&mut self, outcome: &mut ClientShellInput) -> bool {
+        loop {
+            let Some(target) = self.attention_targets.pop_front() else {
+                return false;
+            };
+            if !self.attention_target_is_live(&target)
+                || self.attention_pane_is_focused(&target.endpoint_id, &target.pane_id)
+            {
+                continue;
+            }
+            if !self.endpoint_is_online(&target.endpoint_id) {
+                let label = self.endpoint_label(&target.endpoint_id).to_owned();
+                self.receive_endpoint_unavailable(format!("{label} is unavailable"));
+                self.attention_targets.push_front(target);
+                outcome.repaint = true;
+                return true;
+            }
+            self.dequeue_attention_target(&target.endpoint_id, &target.pane_id);
+            self.dismiss_notification_for_pane(&target.endpoint_id, &target.pane_id);
+            outcome.repaint = true;
+            self.focus_attention_pane(&target.endpoint_id, target.pane_id, outcome);
+            return true;
+        }
+    }
+
+    fn focus_attention_pane(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        pane_id: String,
+        outcome: &mut ClientShellInput,
+    ) {
+        if endpoint_id == &self.active_endpoint_id {
             self.push_endpoint_method(
                 crate::api::schema::Method::PaneFocus(crate::api::schema::PaneTarget { pane_id }),
                 outcome,
             );
-        } else if self.endpoint_is_online(&notification.endpoint_id) {
+        } else if self.endpoint_is_online(endpoint_id) {
             outcome.actions.push(ClientShellAction::ActivateEndpoint {
-                endpoint_id: notification.endpoint_id,
+                endpoint_id: endpoint_id.clone(),
                 target: Some(ClientEndpointFocusTarget::Pane(pane_id)),
             });
+        }
+    }
+
+    fn enqueue_attention_target(&mut self, endpoint_id: &ClientEndpointId, pane_id: &str) {
+        if self
+            .attention_targets
+            .iter()
+            .any(|target| &target.endpoint_id == endpoint_id && target.pane_id == pane_id)
+        {
+            return;
+        }
+        if self.attention_targets.len() == MAX_ATTENTION_TARGETS {
+            self.attention_targets.pop_front();
+        }
+        self.attention_targets.push_back(AttentionJumpTarget {
+            endpoint_id: endpoint_id.clone(),
+            pane_id: pane_id.to_owned(),
+        });
+    }
+
+    fn dequeue_attention_target(&mut self, endpoint_id: &ClientEndpointId, pane_id: &str) {
+        self.attention_targets
+            .retain(|target| &target.endpoint_id != endpoint_id || target.pane_id != pane_id);
+    }
+
+    pub(super) fn acknowledge_attention_focus(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        pane_id: &str,
+    ) {
+        self.dequeue_attention_target(endpoint_id, pane_id);
+        self.dismiss_notification_for_pane(endpoint_id, pane_id);
+    }
+
+    fn dismiss_notification_for_pane(&mut self, endpoint_id: &ClientEndpointId, pane_id: &str) {
+        let matches = |notification: &ClientVisibleNotification| {
+            &notification.endpoint_id == endpoint_id
+                && notification.event.pane_id.as_deref() == Some(pane_id)
+        };
+        self.queued_notifications
+            .retain(|notification| !matches(notification));
+        if self.visible_notification.as_ref().is_some_and(matches) {
+            self.visible_notification = None;
+            self.promote_queued_notification(std::time::Instant::now());
+        }
+    }
+
+    fn attention_pane_is_focused(&self, endpoint_id: &ClientEndpointId, pane_id: &str) -> bool {
+        endpoint_id == &self.active_endpoint_id
+            && self.focused_pane_id().as_deref() == Some(pane_id)
+    }
+
+    fn attention_target_is_live(&self, target: &AttentionJumpTarget) -> bool {
+        self.endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == target.endpoint_id)
+            .and_then(|endpoint| endpoint.snapshot.as_deref())
+            .is_none_or(|snapshot| {
+                snapshot
+                    .panes
+                    .iter()
+                    .any(|pane| pane.pane_id == target.pane_id)
+            })
+    }
+
+    pub(super) fn sync_attention_targets_for_endpoint(&mut self, endpoint_id: &ClientEndpointId) {
+        let Some((live_panes, focused_pane_id)) = self
+            .endpoints
+            .iter()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+            .and_then(|endpoint| endpoint.snapshot.as_deref())
+            .map(|snapshot| {
+                (
+                    snapshot
+                        .panes
+                        .iter()
+                        .map(|pane| pane.pane_id.clone())
+                        .collect::<Vec<_>>(),
+                    snapshot.focused_pane_id.clone(),
+                )
+            })
+        else {
+            return;
+        };
+        self.attention_targets.retain(|target| {
+            &target.endpoint_id != endpoint_id
+                || live_panes.iter().any(|pane_id| pane_id == &target.pane_id)
+        });
+        if endpoint_id != &self.active_endpoint_id || self.outer_focused == Some(false) {
+            return;
+        }
+        if let Some(pane_id) = focused_pane_id {
+            self.acknowledge_attention_focus(endpoint_id, &pane_id);
         }
     }
 
@@ -194,6 +325,18 @@ impl ClientShellState {
             let target_active =
                 self.notification_target_is_active(&pending.endpoint_id, &pending.event);
             let suppress_external = target_active && self.outer_focused != Some(false);
+            if matches!(
+                pending.event.kind,
+                SemanticNotificationKind::NeedsAttention | SemanticNotificationKind::Finished
+            ) {
+                if let Some(pane_id) = pending.event.pane_id.as_deref() {
+                    if !(self.attention_pane_is_focused(&pending.endpoint_id, pane_id)
+                        && self.outer_focused != Some(false))
+                    {
+                        self.enqueue_attention_target(&pending.endpoint_id, pane_id);
+                    }
+                }
+            }
             if let Some(sound) = pending.event.sound {
                 let suppress_sound =
                     pending.event.kind == SemanticNotificationKind::Finished && suppress_external;

@@ -596,6 +596,12 @@
           "description": "Focus the currently visible notification target."
         },
         {
+          "key": "keys.next_attention_target",
+          "type": "keybinding",
+          "default": "\"prefix+tab\"",
+          "description": "Focus the next agent waiting for attention, oldest first. An agent leaves the queue when its pane gets focused."
+        },
+        {
           "key": "keys.previous_workspace",
           "type": "keybinding",
           "default": "unset",
@@ -754,8 +760,8 @@
         {
           "key": "keys.cycle_pane_next",
           "type": "keybinding",
-          "default": "\"prefix+tab\"",
-          "description": "Cycle to the next pane."
+          "default": "unset",
+          "description": "Cycle to the next pane. Unset by default; prefix+tab is used by next_attention_target."
         },
         {
           "key": "keys.cycle_pane_previous",
